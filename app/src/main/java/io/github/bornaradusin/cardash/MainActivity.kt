@@ -129,7 +129,16 @@ class MainActivity : ComponentActivity() {
             setDiesel = { on ->
                 app.settings.setDiesel(on)
                 app.obd.diesel = on
+                // Spark plugs or the fuel filter, if that item hasn't been set up yet
+                app.service.setEngine(on)
             },
+            saveService = { app.service.save(it) },
+            removeService = { app.service.remove(it) },
+            serviceDone = { app.service.done(it) },
+            setRemindKm = { app.service.setKmBefore(it) },
+            setRemindDays = { app.service.setDaysBefore(it) },
+            setCarKm = { app.service.setCarKm(it) },
+            serviceLater = { app.service.later() },
         )
 
         setContent {
@@ -145,6 +154,7 @@ class MainActivity : ComponentActivity() {
             val diesel by app.settings.diesel.collectAsState()
             val can by app.can.state.collectAsState()
             val canPicks by app.settings.canPicks.collectAsState()
+            val service by app.service.state.collectAsState()
             val usedPicks = remember(can, canPicks) { effectivePicks(can.values, canPicks) }
             val fromCan = remember(can, usedPicks) { canValues(can.values, usedPicks) }
             // The CAN box's values go where the dashboard shows them; OBD fills in the rest
@@ -178,6 +188,7 @@ class MainActivity : ComponentActivity() {
                 can = can,
                 canPicks = usedPicks,
                 canValues = fromCan,
+                service = service,
             )
             Scaled { CarDash(state, actions) }
         }

@@ -85,6 +85,8 @@ import io.github.bornaradusin.cardash.car.CarNotifications
 import io.github.bornaradusin.cardash.car.Doors
 import io.github.bornaradusin.cardash.car.NavInfo
 import io.github.bornaradusin.cardash.car.NowPlaying
+import io.github.bornaradusin.cardash.car.ServiceItem
+import io.github.bornaradusin.cardash.car.ServiceState
 import io.github.bornaradusin.cardash.obd.Link
 import io.github.bornaradusin.cardash.obd.ObdState
 import io.github.bornaradusin.cardash.obd.Readings
@@ -119,6 +121,8 @@ data class DashState(
     val canPicks: Map<CanRole, CanPick>,
     /** The CAN box values the person has assigned, ready to show. */
     val canValues: Map<CanRole, Float>,
+    /** What needs servicing, and the car's odometer it counts down from. */
+    val service: ServiceState,
 )
 
 /** What the screens can ask for. */
@@ -146,6 +150,17 @@ class DashActions(
     val setCanPick: (CanRole, CanPick?) -> Unit,
     val uninstall: (String) -> Unit,
     val appInfo: (String) -> Unit,
+    /** Adds a service item, or saves changes to one. */
+    val saveService: (ServiceItem) -> Unit,
+    val removeService: (String) -> Unit,
+    /** Logs an item as done today, at the odometer now. */
+    val serviceDone: (String) -> Unit,
+    val setRemindKm: (Int) -> Unit,
+    val setRemindDays: (Int) -> Unit,
+    /** The odometer as typed from the dashboard, when the CAN box doesn't give it. */
+    val setCarKm: (Double) -> Unit,
+    /** Hides the service reminder until the next drive. */
+    val serviceLater: () -> Unit,
 )
 
 /**
@@ -166,14 +181,21 @@ fun Scaled(content: @Composable () -> Unit) {
 /** The two big dials on Home. */
 private val DIAL = 468.dp
 
+/** The four small gauges on Home: this big, and this far under the divider (about 3 mm on the radio). */
+private val GAUGE = 108.dp
+private val GAUGE_TOP = 18.dp
+private val GAUGE_GAP = 8.dp
+
 private const val PAGE_APPS = 0
 private const val PAGE_HOME = 1
 private const val PAGE_GAUGES = 2
+private const val PAGE_SERVICE = 3
+private const val PAGES = 4
 
-/** Three pages to swipe between (all apps, Home, gauges), and Settings from the gear. */
+/** Four pages to swipe between (all apps, Home, gauges, service), and Settings from the gear. */
 @Composable
 fun CarDash(state: DashState, actions: DashActions) {
-    val pager = rememberPagerState(initialPage = PAGE_HOME) { 3 }
+    val pager = rememberPagerState(initialPage = PAGE_HOME) { PAGES }
     val scope = rememberCoroutineScope()
     var settings by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
@@ -194,6 +216,7 @@ fun CarDash(state: DashState, actions: DashActions) {
             onPage = { scope.launch { settings = false; pager.animateScrollToPage(it) } },
             onName = { naming = true },
             onSettings = { settings = !settings },
+            onService = { scope.launch { settings = false; pager.animateScrollToPage(PAGE_SERVICE) } },
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (settings) {
@@ -205,6 +228,7 @@ fun CarDash(state: DashState, actions: DashActions) {
                             AppsScreen(state.apps, actions)
                         }
                         PAGE_HOME -> Home(state, actions) { scope.launch { pager.animateScrollToPage(PAGE_APPS) } }
+                        PAGE_SERVICE -> ServicePage(state.service, actions)
                         else -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
                             Gauges(state.obd, state.canValues, actions)
                         }
@@ -214,12 +238,16 @@ fun CarDash(state: DashState, actions: DashActions) {
         }
     }
     if (naming) NameDialog(state.name, onSave = { actions.setName(it); naming = false }, onDismiss = { naming = false })
+    // Something due: a reminder, except on the Service page itself and in Settings
+    if (!settings && pager.currentPage != PAGE_SERVICE) {
+        ServiceReminder(state.service, actions) { scope.launch { pager.animateScrollToPage(PAGE_SERVICE) } }
+    }
 }
 
 // ---------- frame ----------
 
 @Composable
-private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: () -> Unit, onSettings: () -> Unit) {
+private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: () -> Unit, onSettings: () -> Unit, onService: () -> Unit) {
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -243,7 +271,7 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
                 Text(now.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())), color = C.muted, fontSize = 13.sp)
                 if (page != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        repeat(3) { i ->
+                        repeat(PAGES) { i ->
                             Box(
                                 Modifier
                                     .height(6.dp)
@@ -258,6 +286,8 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
             }
         }
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+            val due = state.service.dueCount()
+            if (due > 0) ServiceChip(due, onService)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.size(9.dp).clip(CircleShape).background(if (state.obd.link == Link.CONNECTED) C.good else C.lineHi))
                 Text("OBD", color = C.muted, fontSize = 14.sp)
@@ -301,25 +331,28 @@ private fun NameDialog(name: String, onSave: (String) -> Unit, onDismiss: () -> 
 private fun Home(state: DashState, actions: DashActions, allApps: () -> Unit) {
     val r = state.obd.readings
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            RpmDial(r, DIAL)
-            // As tall as the dials, so the small gauges start level with their tops and the box ends level with their bottoms
-            Column(Modifier.weight(1f).height(DIAL), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    // Oil once the radio's CAN box is read; until then, engine load
-                    if (r.oilC != null) RoundGauge(Ic.oil, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 130f)
-                    else RoundGauge(Ic.gauge, "Engine load", r.loadPct, 0f, 100f, r.loadPct?.let { "${it.toInt()}" }, "%")
-                    RoundGauge(Ic.boost, "Boost", r.boostBar, 0f, 1.5f, r.boostBar?.let { fmt(it, 1) }, "bar")
-                    RoundGauge(Ic.air, "Intake air", r.intakeC, 0f, 70f, r.intakeC?.let { "${it.toInt()}" }, "°C", warnAbove = 55f)
-                    RoundGauge(Ic.battery, "Battery", r.volts, 11f, 15f, r.volts?.let { fmt(it, 1) }, "V", warnBelow = 11.8f)
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RpmDial(r, DIAL)
+                // The box runs from just under the small gauges to just above the bottom bar
+                Box(Modifier.weight(1f).fillMaxHeight().padding(top = GAUGE_TOP + GAUGE + 10.dp, bottom = 10.dp)) {
+                    CenterPanel(state, actions, Modifier.fillMaxSize())
                 }
-                CenterPanel(state, actions, Modifier.weight(1f).fillMaxWidth())
+                SpeedDial(r, state.obd.trip.meters, DIAL)
             }
-            SpeedDial(r, state.obd.trip.meters, DIAL)
+            // The small gauges sit high, in the gap above the dials, just under the divider
+            Row(Modifier.align(Alignment.TopCenter).padding(top = GAUGE_TOP), horizontalArrangement = Arrangement.spacedBy(GAUGE_GAP)) {
+                // Oil once the radio's CAN box is read; until then, engine load
+                if (r.oilC != null) RoundGauge(Ic.oil, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 130f, diameter = GAUGE)
+                else RoundGauge(Ic.gauge, "Engine load", r.loadPct, 0f, 100f, r.loadPct?.let { "${it.toInt()}" }, "%", diameter = GAUGE)
+                RoundGauge(Ic.boost, "Boost", r.boostBar, 0f, 1.5f, r.boostBar?.let { fmt(it, 1) }, "bar", diameter = GAUGE)
+                RoundGauge(Ic.air, "Intake air", r.intakeC, 0f, 70f, r.intakeC?.let { "${it.toInt()}" }, "°C", warnAbove = 55f, diameter = GAUGE)
+                RoundGauge(Ic.battery, "Battery", r.volts, 11f, 15f, r.volts?.let { fmt(it, 1) }, "V", warnBelow = 11.8f, diameter = GAUGE)
+            }
         }
         BottomBar(state, actions, allApps)
     }
@@ -383,17 +416,21 @@ private fun RoundGauge(
     unit: String,
     warnAbove: Float? = null,
     warnBelow: Float? = null,
+    /** The canvas below has its own size, so this one has another name. */
+    diameter: Dp = 76.dp,
 ) {
     val frac = value?.let { ((it - min) / (max - min)).coerceIn(0f, 1f) } ?: 0f
     val warn = value != null && ((warnAbove != null && value > warnAbove) || (warnBelow != null && value < warnBelow))
-    Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
+    // Drawn for 76 and scaled from there
+    val k = diameter / 76.dp
+    Box(Modifier.size(diameter), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            val stroke = 5.dp.toPx()
-            val inset = stroke / 2 + 3.dp.toPx()
+            val stroke = 5.dp.toPx() * k
+            val inset = stroke / 2 + 3.dp.toPx() * k
             val tl = Offset(inset, inset)
             val sz = Size(size.width - inset * 2, size.height - inset * 2)
             drawCircle(C.panel, size.minDimension / 2)
-            drawCircle(C.lineHi, size.minDimension / 2 - 1.dp.toPx(), style = Stroke(1.5.dp.toPx()))
+            drawCircle(C.lineHi, size.minDimension / 2 - 1.dp.toPx() * k, style = Stroke(1.5.dp.toPx() * k))
             drawArc(C.track, 135f, 270f, false, tl, sz, style = Stroke(stroke, cap = StrokeCap.Round))
             if (value != null && frac > 0.005f) {
                 val col = if (warn) Color(0xFFFF6B7A) else C.red
@@ -402,10 +439,10 @@ private fun RoundGauge(
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, name, tint = if (warn) C.red else C.ink2, modifier = Modifier.size(18.dp))
+            Icon(icon, name, tint = if (warn) C.red else C.ink2, modifier = Modifier.size(18.dp * k))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(text ?: "–", color = C.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                if (text != null) Text(" $unit", color = C.muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
+                Text(text ?: "–", color = C.ink, fontSize = (17 * k).sp, fontWeight = FontWeight.SemiBold)
+                if (text != null) Text(" $unit", color = C.muted, fontSize = (11 * k).sp, modifier = Modifier.padding(bottom = 3.dp * k))
             }
         }
     }
@@ -423,7 +460,7 @@ private fun CenterPanel(state: DashState, actions: DashActions, modifier: Modifi
             .clip(RoundedCornerShape(22.dp))
             .background(C.panel)
             .border(1.dp, if (nav != null || doors.anyOpen) C.redDeep else C.line, RoundedCornerShape(22.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(12.dp),
     ) {
         if (doors.anyOpen) {
             DoorsPanel(doors)
@@ -455,7 +492,7 @@ private fun CenterPanel(state: DashState, actions: DashActions, modifier: Modifi
 @Composable
 private fun DoorsPanel(d: Doors) {
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(d.describe(), color = C.red, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Text(d.describe(), color = C.red, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Canvas(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)) {
             val h = size.height * 0.92f
             val w = h * 0.46f
@@ -561,73 +598,86 @@ private fun NavPanel(nav: NavInfo) {
             }
             Text(turn.distance ?: "", color = C.ink, fontSize = 52.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic, maxLines = 1)
         }
-        Text(turn.instruction, color = C.ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        nav.sub?.let { Text(it, color = C.muted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        Text(turn.instruction, color = C.ink, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, lineHeight = 32.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+        nav.sub?.let { Text(it, color = C.ink2, fontSize = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
     }
 }
 
-/** With no route in Waze: what the engine is doing and this drive so far. */
+/**
+ * With no route in Waze: what the engine is doing (the bars) and this drive so far. Numbers are big
+ * enough to read at a glance; the outside temperature is in the header, so its place here shows how
+ * long this drive has been.
+ */
 @Composable
 private fun DrivePanel(obd: ObdState, rangeKm: Float?) {
     val r = obd.readings
     val t = obd.trip
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("THIS DRIVE", color = C.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
-            Text(clock(t.drivingMs, hours = true), color = C.ink2, fontSize = 16.sp)
+    Column(Modifier.fillMaxSize()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Bar("Accelerator pedal", r.pedalPct, 100f, r.pedalPct?.let { "${it.toInt()}" }, "%")
+            Bar("Engine load", r.loadPct, 100f, r.loadPct?.let { "${it.toInt()}" }, "%")
+            Bar("Boost", r.boostBar?.coerceAtLeast(0f), 1.5f, r.boostBar?.let { fmt(it, 2) }, "bar")
+            // L/100 km while moving, L/h standing still
+            val l100 = r.fuelL100
+            val fuel = l100 ?: r.fuelLph
+            Bar("Fuel use", fuel, if (l100 != null) 25f else 10f, fuel?.let { fmt(it, 1) }, if (l100 != null) "L/100" else "L/h")
         }
-        Bar("Accelerator pedal", r.pedalPct, 100f, r.pedalPct?.let { "${it.toInt()} %" })
-        Bar("Engine load", r.loadPct, 100f, r.loadPct?.let { "${it.toInt()} %" })
-        Bar("Boost", r.boostBar?.coerceAtLeast(0f), 1.5f, r.boostBar?.let { "${fmt(it, 2)} bar" })
-        // L/100 km while moving, L/h standing still
-        val l100 = r.fuelL100
-        Bar(
-            "Fuel use",
-            if (l100 != null) l100 else r.fuelLph,
-            if (l100 != null) 25f else 10f,
-            if (l100 != null) "${fmt(l100, 1)} L/100" else r.fuelLph?.let { "${fmt(it, 1)} L/h" },
-        )
         Spacer(Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Stat("Average", t.avgL100?.let { fmt(it.toFloat(), 1) }, "L/100", Modifier.weight(1f))
-            Stat("Fuel used", if (t.fuelL > 0) fmt(t.fuelL.toFloat(), 2) else null, "L", Modifier.weight(1f))
-            Stat("Max boost", if (t.maxBoostBar > 0) fmt(t.maxBoostBar, 2) else null, "bar", Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Stat("Distance", fmt((t.meters / 1000).toFloat(), 1), "km", Modifier.weight(1f))
-            Stat("Avg speed", t.avgKmh.toInt().toString(), "km/h", Modifier.weight(1f))
-            Stat("Top speed", t.maxKmh.toInt().toString(), "km/h", Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Stat("Max RPM", if (t.maxRpm > 0) "%,d".format(Locale.US, t.maxRpm.toInt()) else null, "", Modifier.weight(1f))
-            val range = rangeKm
-            if (range != null) Stat("Range", "%,d".format(Locale.US, range.toLong()), "km", Modifier.weight(1f))
-            else Stat("Air flow", r.mafGs?.let { fmt(it, 1) }, "g/s", Modifier.weight(1f))
-            Stat("Outside", r.ambientC?.let { "${it.toInt()}" }, "°C", Modifier.weight(1f))
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Stat("Average", t.avgL100?.let { fmt(it.toFloat(), 1) }, "L/100", Modifier.weight(1f))
+                Stat("Fuel used", if (t.fuelL > 0) fmt(t.fuelL.toFloat(), 2) else null, "L", Modifier.weight(1f))
+                Stat("Max boost", if (t.maxBoostBar > 0) fmt(t.maxBoostBar, 2) else null, "bar", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Stat("Distance", fmt((t.meters / 1000).toFloat(), 1), "km", Modifier.weight(1f))
+                Stat("Avg speed", t.avgKmh.toInt().toString(), "km/h", Modifier.weight(1f))
+                Stat("Top speed", t.maxKmh.toInt().toString(), "km/h", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Stat("Max RPM", if (t.maxRpm > 0) "%,d".format(Locale.US, t.maxRpm.toInt()) else null, "", Modifier.weight(1f))
+                val range = rangeKm
+                if (range != null) Stat("Range", "%,d".format(Locale.US, range.toLong()), "km", Modifier.weight(1f))
+                else Stat("Air flow", r.mafGs?.let { fmt(it, if (it >= 100f) 0 else 1) }, "g/s", Modifier.weight(1f))
+                val minutes = t.drivingMs / 60_000
+                if (minutes < 60) Stat("Driving", "$minutes", "min", Modifier.weight(1f))
+                else Stat("Driving", "%d:%02d".format(minutes / 60, minutes % 60), "h", Modifier.weight(1f))
+            }
         }
     }
 }
 
+/** A live reading: its name, a big number and a bar. */
 @Composable
-private fun Bar(name: String, value: Float?, max: Float, label: String?) {
+private fun Bar(name: String, value: Float?, max: Float, number: String?, unit: String) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row {
-            Text(name, color = C.ink2, fontSize = 15.sp, modifier = Modifier.weight(1f))
-            Text(label ?: "–", color = C.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(name, color = C.ink2, fontSize = 16.sp, maxLines = 1, modifier = Modifier.weight(1f).alignByBaseline())
+            Text(
+                number ?: "–", color = if (number == null) C.muted else C.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                fontStyle = FontStyle.Italic, maxLines = 1, modifier = Modifier.alignByBaseline(),
+            )
+            if (number != null) Text(" $unit", color = C.muted, fontSize = 15.sp, maxLines = 1, modifier = Modifier.alignByBaseline())
         }
-        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.track)) {
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(C.track)) {
             Box(Modifier.fillMaxWidth(((value ?: 0f) / max).coerceIn(0f, 1f)).fillMaxHeight().background(C.red))
         }
     }
 }
 
+/** A figure for this drive: a small name over a big number. */
 @Composable
 private fun Stat(name: String, value: String?, unit: String, modifier: Modifier = Modifier) {
     Column(modifier) {
-        Text(name, color = C.muted, fontSize = 13.sp, maxLines = 1)
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(value ?: "–", color = if (value == null) C.muted else C.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, fontStyle = FontStyle.Italic, maxLines = 1)
-            if (value != null) Text(" $unit", color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 3.dp), maxLines = 1)
+        Text(name, color = C.muted, fontSize = 14.sp, maxLines = 1)
+        Row {
+            Text(
+                value ?: "–", color = if (value == null) C.muted else C.ink, fontSize = 28.sp, fontWeight = FontWeight.SemiBold,
+                fontStyle = FontStyle.Italic, maxLines = 1, softWrap = false, modifier = Modifier.alignByBaseline(),
+            )
+            if (value != null && unit.isNotEmpty()) {
+                Text(" $unit", color = C.muted, fontSize = 12.sp, maxLines = 1, softWrap = false, modifier = Modifier.alignByBaseline())
+            }
         }
     }
 }
@@ -1266,7 +1316,7 @@ private fun CanPicker(v: CanValue, onPick: (CanRole, CanPick) -> Unit, onDismiss
 }
 
 @Composable
-private fun Card(title: String, content: @Composable () -> Unit) {
+internal fun Card(title: String, content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -1298,7 +1348,7 @@ private fun Permission(name: String, why: String, granted: Boolean, ask: () -> U
 }
 
 @Composable
-private fun Wide(label: String, onClick: () -> Unit) {
+internal fun Wide(label: String, onClick: () -> Unit) {
     Box(
         Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(26.dp)).background(C.panelHi)
             .border(1.dp, C.lineHi, RoundedCornerShape(26.dp)).clickable(onClick = onClick),
@@ -1308,7 +1358,7 @@ private fun Wide(label: String, onClick: () -> Unit) {
 
 // ---------- formatting ----------
 
-private fun fmt(v: Float, decimals: Int): String = String.format(Locale.US, "%.${decimals}f", v)
+internal fun fmt(v: Float, decimals: Int): String = String.format(Locale.US, "%.${decimals}f", v)
 
 private fun clock(ms: Long, hours: Boolean = false): String {
     val s = ms / 1000

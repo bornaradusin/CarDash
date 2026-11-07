@@ -51,7 +51,16 @@ object Ic {
     val check = icon("check", circle(12f, 12f, 9f), "M8 12l3 3 5-6")
     val warn = icon("warn", "M12 3L2 20h20z", "M12 10v4", "M12 17h.01")
     val plus = icon("plus", "M12 5v14", "M5 12h14")
+    val minus = icon("minus", "M5 12h14")
     val back = icon("back", "M15 18l-6-6 6-6")
+
+    // Service
+    val wrench = icon("wrench", "M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z")
+    val drop = icon("drop", "M12 3s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11z")
+    val filter = icon("filter", "M3 5h18l-7 8v6l-4 2v-8z")
+    val plug = icon("plug", "M12 2v3", "M9 5h6v4H9z", "M10 9h4v6h-4z", "M12 15v3l2 2")
+    val pencil = icon("pencil", "M4 20h4L19 9l-4-4L4 16z", "M13 7l4 4")
+    val calendar = icon("calendar", "M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z", "M4 10h16", "M8 3v4", "M16 3v4")
 
     // Turn arrows for Waze's next turn
     val turnLeft = icon("turnLeft", "M17 20V11a3 3 0 0 0-3-3H5", "M9 4L5 8l4 4", width = 2.4f)
