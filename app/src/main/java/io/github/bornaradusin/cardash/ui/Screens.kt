@@ -622,7 +622,8 @@ private fun DrivePanel(obd: ObdState, rangeKm: Float?) {
             val fuel = l100 ?: r.fuelLph
             Bar("Fuel use", fuel, if (l100 != null) 25f else 10f, fuel?.let { fmt(it, 1) }, if (l100 != null) "L/100" else "L/h")
         }
-        Spacer(Modifier.weight(1f))
+        // The drive's figures straight under the bars
+        Spacer(Modifier.height(18.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Stat("Average", t.avgL100?.let { fmt(it.toFloat(), 1) }, "L/100", Modifier.weight(1f))
