@@ -84,6 +84,14 @@ class MainActivity : ComponentActivity() {
             setCanPick = { role, pick -> app.settings.setCanPick(role, pick) },
             uninstall = { pkg -> Apps.uninstall(this, pkg) },
             appInfo = { pkg -> Apps.info(this, pkg) },
+            matchFuelAverage = { carAvg ->
+                // This drive's fuel was counted with the factor in use, so scale that factor
+                val ours = app.obd.state.value.trip.avgL100
+                if (ours != null && ours > 0.1 && carAvg > 0f) {
+                    app.settings.setFuelFactor(app.obd.fuelFactor * (carAvg / ours.toFloat()))
+                    app.obd.fuelFactor = app.settings.fuelFactor.value
+                }
+            },
             resetFuel = {
                 app.settings.setFuelFactor(1f)
                 app.obd.fuelFactor = 1f

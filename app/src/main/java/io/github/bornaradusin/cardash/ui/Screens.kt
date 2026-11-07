@@ -138,6 +138,8 @@ class DashActions(
     /** Matches fuel use to the car: what the car says it's using right now, in L/h. */
     val matchFuel: (Float) -> Unit,
     val resetFuel: () -> Unit,
+    /** Matches fuel use to the car's trip computer: its average for this drive, L/100 km. */
+    val matchFuelAverage: (Float) -> Unit,
     val setCanPick: (CanRole, CanPick?) -> Unit,
     val uninstall: (String) -> Unit,
     val appInfo: (String) -> Unit,
@@ -1119,6 +1121,29 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                         Text("L/h", color = C.muted, fontSize = 16.sp)
                         Box(Modifier.weight(1f)) {
                             Wide("Match") { carSays.replace(',', '.').toFloatOrNull()?.let(actions.matchFuel) }
+                        }
+                    }
+                    val t = state.obd.trip
+                    Text(
+                        "More accurate: after a drive of a few km, reset the car's short-term average at the start, then type its average here. " +
+                            "CarDash's own for this drive: ${t.avgL100?.let { fmt(it.toFloat(), 1) + " L/100" } ?: "not enough distance yet"}.",
+                        color = C.muted, fontSize = 14.sp,
+                    )
+                    var carAvg by remember { mutableStateOf("") }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = carAvg,
+                            onValueChange = { v -> carAvg = v.filter { it.isDigit() || it == '.' || it == ',' }.take(5) },
+                            singleLine = true,
+                            placeholder = { Text("8.5", color = C.muted) },
+                            textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                            modifier = Modifier.width(120.dp),
+                        )
+                        Text("L/100", color = C.muted, fontSize = 16.sp)
+                        Box(Modifier.weight(1f)) {
+                            Wide("Match drive") { carAvg.replace(',', '.').toFloatOrNull()?.let(actions.matchFuelAverage) }
                         }
                     }
                     if (r.fuelFactor != 1f) Wide("Undo matching", actions.resetFuel)
