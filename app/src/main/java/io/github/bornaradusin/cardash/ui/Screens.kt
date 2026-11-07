@@ -363,7 +363,7 @@ private fun RpmDial(r: Readings, size: Dp) {
     Dial(
         value = r.rpm, max = 6000f, major = 1000f, minor = 500f, redFrom = 4500f,
         label = { (it / 1000).toInt().toString() }, labelSize = 0.094f,
-        bottomArc = true, bottomFill = r.coolantC?.let { (it - 40f) / 90f },
+        bottomArc = true, bottomFill = r.coolantC?.let { (it - 40f) / 100f },
         modifier = Modifier.size(size),
     ) {
         Row(
