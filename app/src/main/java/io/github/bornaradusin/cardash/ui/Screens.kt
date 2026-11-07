@@ -380,7 +380,7 @@ private fun RpmDial(r: Readings, size: Dp) {
 @Composable
 private fun SpeedDial(r: Readings, tripMeters: Double, size: Dp) {
     Dial(
-        value = r.speedKmh, max = 260f, major = 20f, minor = 10f, labelSize = 0.068f, labelEvery = 40f,
+        value = r.speedKmh, max = 280f, major = 20f, minor = 10f, labelSize = 0.068f, labelEvery = 40f,
         modifier = Modifier.size(size),
     ) {
         Box(
