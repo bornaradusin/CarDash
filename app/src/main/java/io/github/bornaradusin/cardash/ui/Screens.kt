@@ -399,7 +399,7 @@ private fun SpeedDial(r: Readings, tripMeters: Double, size: Dp) {
         Text(
             r.odometerKm?.let { "%,d km".format(Locale.US, it.toLong()) } ?: "${fmt((tripMeters / 1000).toFloat(), 1)} km",
             color = C.ink, fontSize = (size.value * 0.058f).sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = size * 0.78f),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = size * 0.818f),
         )
     }
 }
