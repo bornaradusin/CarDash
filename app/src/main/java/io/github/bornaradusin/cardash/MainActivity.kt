@@ -36,31 +36,20 @@ class MainActivity : ComponentActivity() {
 
     /** Bumped on resume, so permissions and installed apps are checked again after a trip to Settings. */
     private var resumes by mutableIntStateOf(0)
-    private var hasLocation by mutableStateOf(false)
-
-    private val askLocation = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        hasLocation = locationAllowed()
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         media = Media(this)
-        hasLocation = locationAllowed()
-        if (!hasLocation && savedInstanceState == null) {
-            askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-        }
 
         val actions = DashActions(
             launch = { pkg -> Apps.launch(this, pkg) },
             setSlot = { i, pkg -> app.settings.setSlot(i, pkg) },
-            playPause = { media.playPause() },
+            playPause = { media.playPause(musicApp()) },
             next = { media.next() },
             previous = { media.previous() },
             scanFaults = { app.obd.scanFaults() },
             askUsbAgain = { app.obd.askAgain() },
-            allowLocation = {
-                askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-            },
+            setIcon = { i, key -> app.settings.setIcon(i, key) },
             allowNotifications = {
                 startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             },
@@ -82,6 +71,8 @@ class MainActivity : ComponentActivity() {
             val name by app.settings.name.collectAsState()
             val slots by app.settings.slots.collectAsState()
             val fullScreen by app.settings.fullScreen.collectAsState()
+            val icons by app.settings.icons.collectAsState()
+            val lastWaze by CarNotifications.lastWaze.collectAsState()
             var apps by remember { mutableStateOf(emptyList<io.github.bornaradusin.cardash.car.AppEntry>()) }
             LaunchedEffect(resumes) {
                 apps = withContext(Dispatchers.IO) { Apps.all(this@MainActivity) }
@@ -93,7 +84,8 @@ class MainActivity : ComponentActivity() {
                 now = now,
                 apps = apps,
                 slots = slots,
-                hasLocation = hasLocation,
+                icons = icons,
+                lastWaze = lastWaze,
                 hasNotifications = remember(resumes) { CarNotifications.allowed(this@MainActivity) },
                 fullScreen = fullScreen,
             )
@@ -103,7 +95,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        hasLocation = locationAllowed()
         resumes++
         app.obd.start()
         media.start()
@@ -125,9 +116,12 @@ class MainActivity : ComponentActivity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() = Unit
 
-    private fun locationAllowed() =
-        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    /** The app Play starts when nothing is playing: the YouTube Music button's app. */
+    private fun musicApp(): String? {
+        val installed = Apps.all(this)
+        val chosen = app.settings.slots.value.getOrNull(2)?.takeIf { pkg -> installed.any { it.pkg == pkg } }
+        return chosen ?: Apps.defaultFor(2, installed)?.pkg
+    }
 
     private fun applyFullScreen(on: Boolean) {
         val controller = WindowCompat.getInsetsController(window, window.decorView)

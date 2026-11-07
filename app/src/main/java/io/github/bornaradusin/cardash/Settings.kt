@@ -27,6 +27,15 @@ class Settings(context: Context) {
         _slots.value = _slots.value.toMutableList().also { it[i] = pkg }
     }
 
+    private val _icons = MutableStateFlow((0 until SLOTS).map { sp.getString("icon$it", null) ?: DEFAULT_ICONS[it] })
+    /** The dashboard icon for each app button; "app" = the app's own icon. */
+    val icons: StateFlow<List<String>> = _icons
+
+    fun setIcon(i: Int, key: String) {
+        sp.edit().putString("icon$i", key).apply()
+        _icons.value = _icons.value.toMutableList().also { it[i] = key }
+    }
+
     private val _fullScreen = MutableStateFlow(sp.getBoolean("fullScreen", true))
     /** Hides the radio's own bars (a swipe from the edge brings them back). */
     val fullScreen: StateFlow<Boolean> = _fullScreen
@@ -38,5 +47,6 @@ class Settings(context: Context) {
 
     companion object {
         const val SLOTS = 4
+        val DEFAULT_ICONS = listOf("android_auto", "waze", "music", "video")
     }
 }

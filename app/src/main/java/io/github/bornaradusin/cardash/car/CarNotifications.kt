@@ -45,8 +45,13 @@ class CarNotifications : NotificationListenerService() {
         val text = (e.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: e.getCharSequence(Notification.EXTRA_TEXT))?.toString()?.trim()
         val sub = e.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim()
         if (title.isEmpty() && text.isNullOrEmpty()) return
+        lastWaze.value = listOfNotNull(title, text, sub).filter { it.isNotEmpty() }.joinToString("  |  ")
         navKey = sbn.key
-        nav.value = NavInfo(title.ifEmpty { text.orEmpty() }, text.takeIf { title.isNotEmpty() }, sub, n.getLargeIcon())
+        val all = listOfNotNull(title, text, sub).joinToString(" ")
+        // Waze's notification is there whenever it runs ("Running. Tap to open."); it only shows a
+        // distance while it's navigating
+        val navigating = DISTANCE.containsMatchIn(all) && !all.contains("tap to open", ignoreCase = true)
+        nav.value = if (navigating) NavInfo(title.ifEmpty { text.orEmpty() }, text.takeIf { title.isNotEmpty() }, sub, n.getLargeIcon()) else null
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
@@ -61,6 +66,9 @@ class CarNotifications : NotificationListenerService() {
         private var navKey: String? = null
 
         val nav = MutableStateFlow<NavInfo?>(null)
+        /** Waze's last notification as it came, for Settings, to check what it says while navigating. */
+        val lastWaze = MutableStateFlow<String?>(null)
+        val DISTANCE = Regex("\\b\\d+(?:[.,]\\d+)?\\s?(m|km|ft|mi|yd)\\b", RegexOption.IGNORE_CASE)
         val connected = MutableStateFlow(false)
 
         fun allowed(context: Context): Boolean =

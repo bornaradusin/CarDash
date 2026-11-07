@@ -86,7 +86,9 @@ data class DashState(
     val now: NowPlaying?,
     val apps: List<AppEntry>,
     val slots: List<String?>,
-    val hasLocation: Boolean,
+    val icons: List<String>,
+    /** Waze's last notification, word for word, for Settings. */
+    val lastWaze: String?,
     val hasNotifications: Boolean,
     val fullScreen: Boolean,
 )
@@ -100,7 +102,7 @@ class DashActions(
     val previous: () -> Unit,
     val scanFaults: () -> Unit,
     val askUsbAgain: () -> Unit,
-    val allowLocation: () -> Unit,
+    val setIcon: (Int, String) -> Unit,
     val allowNotifications: () -> Unit,
     val chooseHome: () -> Unit,
     val setName: (String) -> Unit,
@@ -169,7 +171,6 @@ private fun Header(state: DashState) {
             Text(now.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())), color = C.muted, fontSize = 13.sp)
         }
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Ic.pin, "GPS", tint = if (state.hasLocation) C.ink2 else C.lineHi, modifier = Modifier.size(22.dp))
             Icon(Ic.obd, "OBD", tint = if (state.obd.link == Link.CONNECTED) C.good else C.lineHi, modifier = Modifier.size(22.dp))
             state.obd.readings.ambientC?.let {
                 Box(Modifier.width(1.dp).height(26.dp).background(C.line))
@@ -222,10 +223,12 @@ private fun Home(state: DashState, actions: DashActions, allApps: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill(Ic.oil, "Oil", r.oilC?.let { "${it.toInt()}" }, "°C", Modifier.weight(1f))
                     Pill(Ic.boost, "Boost", r.boostBar?.let { fmt(it, 1) }, "bar", Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill(Ic.air, "Intake air", r.intakeC?.let { "${it.toInt()}" }, "°C", Modifier.weight(1f))
                     Pill(Ic.battery, "Battery", r.volts?.let { fmt(it, 1) }, "V", Modifier.weight(1f))
                 }
-                MapCard(state.hasLocation, r.speedKmh, state.nav, Modifier.weight(1f).fillMaxWidth())
+                CenterPanel(state, actions, Modifier.weight(1f).fillMaxWidth())
             }
             SpeedDial(r, Modifier.size(372.dp))
         }
@@ -237,32 +240,32 @@ private fun Home(state: DashState, actions: DashActions, allApps: () -> Unit) {
 @Composable
 private fun RpmDial(r: Readings, modifier: Modifier) {
     Dial(
-        value = r.rpm, max = 7000f, major = 1000f, minor = 500f, redFrom = 6000f,
-        label = { (it / 1000).toInt().toString() }, labelSize = 0.07f, modifier = modifier,
+        value = r.rpm, max = 6000f, major = 1000f, minor = 500f, redFrom = 4500f,
+        label = { (it / 1000).toInt().toString() }, labelSize = 0.1f, modifier = modifier,
     ) {
         Column(Modifier.align(Alignment.Center).padding(top = 120.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("RPM", color = C.ink2, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text("x1000", color = C.muted, fontSize = 12.sp)
+            Text(r.rpm?.let { "%,d".format(Locale.US, it.toInt()) } ?: "RPM", color = C.ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+            Text("rpm", color = C.muted, fontSize = 14.sp)
         }
         Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Ic.coolant, "Coolant", tint = C.red, modifier = Modifier.size(20.dp))
-            Text(r.coolantC?.let { "${it.toInt()} °C" } ?: "–", color = C.ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(r.coolantC?.let { "${it.toInt()} °C" } ?: "–", color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
 private fun SpeedDial(r: Readings, modifier: Modifier) {
-    Dial(value = r.speedKmh, max = 260f, major = 20f, minor = 10f, labelSize = 0.05f, modifier = modifier) {
+    Dial(value = r.speedKmh, max = 260f, major = 20f, minor = 10f, labelSize = 0.08f, labelEvery = 40f, modifier = modifier) {
         Box(Modifier.size(150.dp).clip(CircleShape).background(Color(0xFF0A0C10)).border(2.dp, C.line, CircleShape), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(r.speedKmh?.toInt()?.toString() ?: "–", color = C.ink, fontSize = 58.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
-                Text("km/h", color = C.muted, fontSize = 14.sp)
+                Text(r.speedKmh?.toInt()?.toString() ?: "–", color = C.ink, fontSize = 64.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+                Text("km/h", color = C.muted, fontSize = 16.sp)
             }
         }
         Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Ic.fuel, "Fuel", tint = C.red, modifier = Modifier.size(20.dp))
-            Text(r.fuelPct?.let { "${it.toInt()} %" } ?: "–", color = C.ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(r.fuelPct?.let { "${it.toInt()} %" } ?: "–", color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -271,43 +274,64 @@ private fun SpeedDial(r: Readings, modifier: Modifier) {
 private fun Pill(icon: ImageVector, name: String, value: String?, unit: String, modifier: Modifier) {
     Row(
         modifier
-            .height(84.dp)
-            .clip(RoundedCornerShape(42.dp))
+            .height(60.dp)
+            .clip(RoundedCornerShape(30.dp))
             .background(C.panel)
             .border(1.dp, C.line, RoundedCornerShape(42.dp)),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, name, tint = C.red, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(value ?: "–", color = C.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        if (value != null) Text(" $unit", color = C.muted, fontSize = 12.sp)
+        Icon(icon, name, tint = C.red, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(value ?: "–", color = C.ink, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+        if (value != null) Text(" $unit", color = C.muted, fontSize = 15.sp)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AppRow(state: DashState, actions: DashActions, allApps: () -> Unit) {
+    var menu by remember { mutableStateOf<Int?>(null) }
     var picking by remember { mutableStateOf<Int?>(null) }
+    var choosingIcon by remember { mutableStateOf<Int?>(null) }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         repeat(4) { i ->
             val app = state.slots.getOrNull(i)?.let { pkg -> state.apps.firstOrNull { it.pkg == pkg } } ?: Apps.defaultFor(i, state.apps)
+            val iconKey = state.icons.getOrNull(i) ?: "app"
             AppTile(
                 label = app?.label ?: Apps.slotNames[i],
-                icon = app?.icon?.let { remember(it) { it.toBitmap(96, 96).asImageBitmap() } },
+                icon = if (iconKey == "app") app?.icon?.let { remember(it) { it.toBitmap(96, 96).asImageBitmap() } } else null,
                 missing = app == null,
                 modifier = Modifier.weight(1f).combinedClickable(
                     onClick = { if (app != null) actions.launch(app.pkg) else picking = i },
-                    onLongClick = { picking = i },
+                    onLongClick = { menu = i },
                 ),
+                vector = Ic.byKey(iconKey),
             )
         }
         Box(Modifier.weight(1f).clickable(onClick = allApps)) {
             AppTile("Apps", null, false, Modifier, Ic.apps)
         }
     }
+    menu?.let { slot ->
+        AlertDialog(
+            onDismissRequest = { menu = null },
+            containerColor = C.panelHi,
+            title = { Text("This button", color = C.ink) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Wide("Choose the app") { menu = null; picking = slot }
+                    Wide("Choose the icon") { menu = null; choosingIcon = slot }
+                }
+            },
+            confirmButton = { TextButton(onClick = { menu = null }) { Text("Cancel", color = C.ink2) } },
+        )
+    }
     picking?.let { slot ->
         AppPicker(state.apps, onPick = { actions.setSlot(slot, it); picking = null }, onDismiss = { picking = null })
+    }
+    choosingIcon?.let { slot ->
+        IconPicker(onPick = { actions.setIcon(slot, it); choosingIcon = null }, onDismiss = { choosingIcon = null })
     }
 }
 
@@ -324,15 +348,15 @@ private fun AppTile(label: String, icon: ImageBitmap?, missing: Boolean, modifie
         verticalArrangement = Arrangement.Center,
     ) {
         when {
-            icon != null -> Image(icon, null, Modifier.size(34.dp))
-            vector != null -> Icon(vector, null, tint = C.ink2, modifier = Modifier.size(28.dp))
-            else -> Icon(Ic.plus, null, tint = C.muted, modifier = Modifier.size(28.dp))
+            icon != null -> Image(icon, null, Modifier.size(36.dp))
+            vector != null -> Icon(vector, null, tint = if (missing) C.muted else C.ink, modifier = Modifier.size(34.dp))
+            else -> Icon(Ic.plus, null, tint = C.muted, modifier = Modifier.size(30.dp))
         }
         Spacer(Modifier.height(6.dp))
         Text(
             if (missing) "$label · tap to choose" else label,
             color = if (missing) C.muted else C.ink,
-            fontSize = 15.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -442,6 +466,158 @@ private fun MusicBar(state: DashState, actions: DashActions) {
 private fun RoundButton(icon: ImageVector, label: String, size: Dp, enabled: Boolean, onClick: () -> Unit) {
     Box(Modifier.size(size).clip(CircleShape).clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(icon, label, tint = if (enabled) C.ink else C.lineHi, modifier = Modifier.size(26.dp))
+    }
+}
+
+@Composable
+private fun IconPicker(onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.panelHi,
+        title = { Text("Choose an icon", color = C.ink) },
+        text = {
+            LazyVerticalGrid(GridCells.Fixed(6), Modifier.height(320.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(Ic.choices, key = { it.first }) { (key, vector) ->
+                    Box(
+                        Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)).background(C.panel).border(1.dp, C.line, RoundedCornerShape(14.dp))
+                            .clickable { onPick(key) },
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(vector, key, tint = C.ink, modifier = Modifier.size(32.dp)) }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick("app") }) { Text("Use the app's own icon", color = C.ink2) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2) } },
+    )
+}
+
+// ---------- centre: Waze's next turn, or the drive ----------
+
+@Composable
+private fun CenterPanel(state: DashState, actions: DashActions, modifier: Modifier) {
+    val nav = state.nav
+    Box(
+        modifier
+            .clip(RoundedCornerShape(22.dp))
+            .background(C.panel)
+            .border(1.dp, if (nav != null) C.redDeep else C.line, RoundedCornerShape(22.dp))
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+    ) {
+        if (nav != null) NavPanel(nav) else TripPanel(state.obd)
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .height(40.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(C.panelHi)
+                .border(1.dp, C.lineHi, RoundedCornerShape(20.dp))
+                .clickable { actions.launch(io.github.bornaradusin.cardash.car.CarNotifications.WAZE) }
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Ic.waze, null, tint = C.ink, modifier = Modifier.size(18.dp))
+                Text(if (nav != null) "Waze" else "Start Waze", color = C.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+private data class Turn(val icon: ImageVector?, val distance: String?, val instruction: String)
+
+/** Waze's notification as an arrow, a distance and what to do. */
+private fun turnOf(nav: NavInfo): Turn {
+    val all = listOfNotNull(nav.title, nav.text).joinToString(" ")
+    val distance = io.github.bornaradusin.cardash.car.CarNotifications.DISTANCE.find(all)?.value
+    val instruction = listOfNotNull(nav.title, nav.text)
+        .map { if (distance != null) it.replace(distance, "") else it }
+        .map { it.trim(' ', '·', ',', '-', '–', ':') }
+        .filter { it.isNotEmpty() }
+        .joinToString(" · ")
+        .ifEmpty { nav.title }
+    val l = all.lowercase()
+    val icon = when {
+        "u-turn" in l || "u turn" in l || "make a u" in l -> Ic.uTurn
+        "roundabout" in l -> Ic.roundabout
+        "keep left" in l || "bear left" in l || "slight left" in l -> Ic.keepLeft
+        "keep right" in l || "bear right" in l || "slight right" in l || "exit" in l -> Ic.keepRight
+        "left" in l -> Ic.turnLeft
+        "right" in l -> Ic.turnRight
+        "arriv" in l || "destination" in l -> Ic.arrive
+        "straight" in l || "continue" in l -> Ic.straight
+        else -> null
+    }
+    return Turn(icon, distance, instruction)
+}
+
+@Composable
+private fun NavPanel(nav: NavInfo) {
+    val context = LocalContext.current
+    val turn = remember(nav) { turnOf(nav) }
+    val wazeArrow = remember(nav.icon) {
+        runCatching { nav.icon?.loadDrawable(context)?.toBitmap(160, 160)?.asImageBitmap() }.getOrNull()
+    }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Box(Modifier.size(104.dp).clip(RoundedCornerShape(20.dp)).background(C.redTint), contentAlignment = Alignment.Center) {
+                when {
+                    turn.icon != null -> Icon(turn.icon, null, tint = C.red, modifier = Modifier.size(80.dp))
+                    wazeArrow != null -> Image(wazeArrow, null, Modifier.size(80.dp))
+                    else -> Icon(Ic.straight, null, tint = C.red, modifier = Modifier.size(80.dp))
+                }
+            }
+            Text(
+                turn.distance ?: "",
+                color = C.ink, fontSize = 52.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic, maxLines = 1,
+            )
+        }
+        Text(turn.instruction, color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        nav.sub?.let { Text(it, color = C.muted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    }
+}
+
+@Composable
+private fun TripPanel(obd: ObdState) {
+    val r = obd.readings
+    val t = obd.trip
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("THIS DRIVE", color = C.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+            Text(clock(t.drivingMs, hours = true), color = C.ink2, fontSize = 15.sp)
+        }
+        Bar("Throttle", r.throttlePct, 100f, r.throttlePct?.let { "${it.toInt()} %" })
+        Bar("Engine load", r.loadPct, 100f, r.loadPct?.let { "${it.toInt()} %" })
+        Bar("Boost", r.boostBar?.coerceAtLeast(0f), 1.5f, r.boostBar?.let { "${fmt(it, 2)} bar" })
+        Spacer(Modifier.weight(1f))
+        Row(Modifier.padding(end = 110.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Stat("Distance", fmt((t.meters / 1000).toFloat(), 1), "km")
+            Stat("Average", t.avgKmh.toInt().toString(), "km/h")
+            Stat("Top", t.maxKmh.toInt().toString(), "km/h")
+        }
+    }
+}
+
+@Composable
+private fun Bar(name: String, value: Float?, max: Float, label: String?) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row {
+            Text(name, color = C.ink2, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text(label ?: "–", color = C.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.track)) {
+            Box(Modifier.fillMaxWidth(((value ?: 0f) / max).coerceIn(0f, 1f)).fillMaxHeight().background(C.red))
+        }
+    }
+}
+
+@Composable
+private fun Stat(name: String, value: String, unit: String) {
+    Column {
+        Text(name, color = C.muted, fontSize = 13.sp)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(value, color = C.ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, fontStyle = FontStyle.Italic)
+            Text(" $unit", color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 3.dp))
+        }
     }
 }
 
@@ -648,10 +824,26 @@ private fun SettingsScreen(state: DashState, actions: DashActions) {
                     "Only one app can use the dongle at a time, so close Torque while CarDash is reading it.",
                     color = C.muted, fontSize = 14.sp,
                 )
+                if (state.obd.log.isNotEmpty()) {
+                    Column(
+                        Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF05060A))
+                            .verticalScroll(rememberScrollState(Int.MAX_VALUE)).padding(10.dp),
+                    ) {
+                        state.obd.log.forEach {
+                            Text(it, color = C.ink2, fontSize = 12.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                        }
+                    }
+                }
             }
             Card("Permissions") {
-                Permission("Location", "Shows where you are on the map", state.hasLocation, actions.allowLocation)
-                Permission("Notification access", "Waze's next turn on the map, and music controls", state.hasNotifications, actions.allowNotifications)
+                Permission("Notification access", "Waze's next turn, and music controls", state.hasNotifications, actions.allowNotifications)
+            }
+            Card("Waze") {
+                Text(
+                    if (state.nav != null) "Navigating: shown on Home" else "Not navigating",
+                    color = C.ink, fontSize = 17.sp,
+                )
+                Text("Waze's last notification: ${state.lastWaze ?: "none yet"}", color = C.muted, fontSize = 14.sp)
             }
             Text(
                 "CarDash ${runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""}",
@@ -706,7 +898,7 @@ private fun Wide(label: String, onClick: () -> Unit) {
 
 private fun fmt(v: Float, decimals: Int): String = String.format(Locale.US, "%.${decimals}f", v)
 
-private fun clock(ms: Long): String {
+private fun clock(ms: Long, hours: Boolean = false): String {
     val s = ms / 1000
-    return "%d:%02d".format(s / 60, s % 60)
+    return if (hours) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 }

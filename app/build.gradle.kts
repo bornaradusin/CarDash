@@ -72,8 +72,6 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
-    // Map: MapLibre with OpenFreeMap tiles, no API key
-    implementation("org.maplibre.gl:android-sdk:11.8.0")
     // The OBD dongle's USB serial chip (CH340, FTDI, CP210x, PL2303)
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
 }

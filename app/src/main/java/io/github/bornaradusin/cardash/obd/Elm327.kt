@@ -3,7 +3,7 @@ package io.github.bornaradusin.cardash.obd
 import com.hoho.android.usbserial.driver.UsbSerialPort
 
 /** Sends one command to the ELM327 and waits for its ">" prompt. */
-class Elm327(private val port: UsbSerialPort) {
+class Elm327(private val port: UsbSerialPort, private val log: ((String) -> Unit)? = null) {
 
     private val buf = ByteArray(256)
 
@@ -21,7 +21,12 @@ class Elm327(private val port: UsbSerialPort) {
                 if ('>' in out) break
             }
         }
-        if ('>' !in out) return ""
-        return out.toString().substringBefore('>').replace("\u0000", "").trim()
+        val answer = out.toString().substringBefore('>').replace("\u0000", "").trim()
+        // Logged while setting up (AT commands), not for every reading
+        if (log != null && ((command.startsWith("AT") && command != "ATRV") || command.isEmpty() || command == "0100" || command == "03")) {
+            log.invoke("> ${command.ifEmpty { "(return)" }}  < ${answer.replace("\r", " | ").replace("\n", " ").ifEmpty { if ('>' in out) "(empty)" else "(no answer)" }}")
+        }
+        // Some clones finish without a prompt: what they did send still counts
+        return answer
     }
 }

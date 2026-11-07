@@ -82,12 +82,14 @@ class ObdLink(private val context: Context) {
             try {
                 port.open(connection)
                 _state.update { it.copy(link = Link.CONNECTING, problem = null) }
+                log("Opened ${driver.javaClass.simpleName.removeSuffix("Driver")} (USB ${"%04x".format(driver.device.vendorId)}:${"%04x".format(driver.device.productId)})")
                 val elm = connect(port) ?: run {
-                    _state.update { it.copy(link = Link.ERROR, problem = "The dongle didn't answer") }
+                    _state.update { it.copy(link = Link.ERROR, problem = "The dongle didn't answer at any speed") }
                     null
                 }
                 if (elm != null) poll(elm)
             } catch (e: Exception) {
+                log("Error: ${e.message ?: e.javaClass.simpleName}")
                 _state.update { it.copy(link = Link.ERROR, problem = e.message ?: e.javaClass.simpleName) }
             } finally {
                 runCatching { port.close() }
@@ -96,19 +98,39 @@ class ObdLink(private val context: Context) {
         }
     }
 
-    /** Finds the dongle's speed (most USB ELM327s use 38400) and sets it up. */
-    private fun connect(port: UsbSerialPort): Elm327? {
-        for (baud in intArrayOf(38_400, 115_200, 9_600)) {
+    /**
+     * Finds the dongle's speed and sets it up. USB ELM327s use 38400 most often, clones anything from
+     * 9600 to 500000; some don't call themselves ELM, so any sensible answer to ATI counts.
+     */
+    private suspend fun connect(port: UsbSerialPort): Elm327? {
+        for (baud in intArrayOf(38_400, 115_200, 9_600, 57_600, 230_400, 500_000)) {
+            if (!coroutineContext.isActive) return null
+            log("Trying $baud baud")
             port.setParameters(baud, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
             runCatching { port.setDTR(true); port.setRTS(true) }
-            val elm = Elm327(port)
-            val id = elm.send("ATZ", 2_500)
-            if ("ELM" !in id.uppercase()) continue
+            delay(200)
+            val elm = Elm327(port, ::log)
+            // A bare return first, in case the dongle is half-way through something
+            elm.send("", 600)
+            val reset = elm.send("ATZ", 3_000)
+            delay(300)
+            val id = elm.send("ATI", 1_500)
+            val name = listOf(id, reset).flatMap { it.lines() }.map { it.trim() }
+                .firstOrNull { line ->
+                    line.length >= 3 && line.all { c -> c.code in 32..126 } && !line.startsWith("AT") && line.any { c -> c.isLetter() }
+                }
+            if (name == null) continue
+            log("Dongle found at $baud baud: $name")
             listOf("ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP0").forEach { elm.send(it) }
-            _state.update { it.copy(adapter = id.lines().map { l -> l.trim() }.firstOrNull { l -> "ELM" in l.uppercase() }) }
+            _state.update { it.copy(adapter = name, baud = baud) }
             return elm
         }
         return null
+    }
+
+    private fun log(line: String) {
+        val stamp = java.time.LocalTime.now().withNano(0)
+        _state.update { it.copy(log = (it.log + "$stamp $line").takeLast(60)) }
     }
 
     private suspend fun poll(elm: Elm327) {
@@ -121,6 +143,7 @@ class ObdLink(private val context: Context) {
         var count = 0
         var since = System.currentTimeMillis()
         var lastMil = 0L
+        var lastRound = System.currentTimeMillis()
         while (coroutineContext.isActive) {
             var r = _state.value.readings
             var answered = false
@@ -159,6 +182,17 @@ class ObdLink(private val context: Context) {
             }
 
             val now = System.currentTimeMillis()
+            // The trip: distance from speed over the time since the last round
+            val dt = (now - lastRound).coerceIn(0, 5_000)
+            lastRound = now
+            val kmh = r.speedKmh
+            val trip = _state.value.trip.let { t ->
+                if (!answered || kmh == null) t else t.copy(
+                    meters = t.meters + kmh / 3.6 * dt / 1000.0,
+                    drivingMs = t.drivingMs + (if (kmh > 2) dt else 0L),
+                    maxKmh = maxOf(t.maxKmh, kmh),
+                )
+            }
             val rate = if (now - since >= 2_000) {
                 val rps = count * 1000f / (now - since)
                 count = 0
@@ -171,6 +205,7 @@ class ObdLink(private val context: Context) {
                     link = if (silent >= 5) Link.NO_CAR else Link.CONNECTED,
                     readings = r,
                     rate = rate,
+                    trip = trip,
                 )
             }
             if (silent >= 5) {

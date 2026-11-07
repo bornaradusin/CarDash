@@ -43,6 +43,8 @@ fun Dial(
     modifier: Modifier = Modifier,
     redFrom: Float? = null,
     labelSize: Float = 0.075f,
+    /** Numbers every this much (a multiple of [major]); fewer numbers can be bigger. */
+    labelEvery: Float = major,
     label: (Float) -> String = { it.toInt().toString() },
     needle: Boolean = true,
     content: @Composable BoxScope.() -> Unit = {},
@@ -86,10 +88,11 @@ fun Dial(
                 val inRed = redFrom != null && v >= redFrom
                 val tickColor = if (inRed) C.red else C.ink2
                 drawLine(tickColor, point(c, a, inner), point(c, a, outer), if (isMajor) r * 0.018f else r * 0.009f, StrokeCap.Round)
-                if (isMajor) {
+                val labelled = isMajor && ((v / labelEvery) - kotlin.math.round(v / labelEvery)) in -0.001f..0.001f
+                if (labelled) {
                     paint.textSize = r * labelSize * 2f
                     paint.color = (if (inRed) C.red else C.ink).toArgb()
-                    val p = point(c, a, r * 0.635f)
+                    val p = point(c, a, r * 0.6f)
                     drawContext.canvas.nativeCanvas.drawText(label(v), p.x, p.y + paint.textSize * 0.35f, paint)
                 }
                 v += minor

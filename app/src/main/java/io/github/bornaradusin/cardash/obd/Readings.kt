@@ -50,4 +50,14 @@ data class ObdState(
     val scanning: Boolean = false,
     /** Readings per second, for the status line. */
     val rate: Float = 0f,
+    /** The serial speed the dongle answered at. */
+    val baud: Int? = null,
+    /** The last lines sent to and from the dongle, for Settings. */
+    val log: List<String> = emptyList(),
+    val trip: Trip = Trip(),
 )
+
+/** This drive, worked out from the speed readings while the car answers. */
+data class Trip(val meters: Double = 0.0, val drivingMs: Long = 0, val maxKmh: Float = 0f) {
+    val avgKmh: Double get() = if (drivingMs > 0) meters / 1000.0 / (drivingMs / 3_600_000.0) else 0.0
+}

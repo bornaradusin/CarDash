@@ -4,10 +4,6 @@
 
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- The app buttons and the app drawer list what's installed -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"

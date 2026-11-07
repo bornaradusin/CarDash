@@ -52,4 +52,42 @@ object Ic {
     val warn = icon("warn", "M12 3L2 20h20z", "M12 10v4", "M12 17h.01")
     val plus = icon("plus", "M12 5v14", "M5 12h14")
     val back = icon("back", "M15 18l-6-6 6-6")
+
+    // Turn arrows for Waze's next turn
+    val turnLeft = icon("turnLeft", "M17 20V11a3 3 0 0 0-3-3H5", "M9 4L5 8l4 4", width = 2.4f)
+    val turnRight = icon("turnRight", "M7 20V11a3 3 0 0 1 3-3h9", "M15 4l4 4-4 4", width = 2.4f)
+    val keepLeft = icon("keepLeft", "M14 20v-6L7 7", "M7 12V7h5", width = 2.4f)
+    val keepRight = icon("keepRight", "M10 20v-6l7-7", "M17 12V7h-5", width = 2.4f)
+    val straight = icon("straight", "M12 20V4", "M7 9l5-5 5 5", width = 2.4f)
+    val uTurn = icon("uTurn", "M8 20V9a4 4 0 0 1 8 0v4", "M12 10l4 4 4-4", width = 2.4f)
+    val roundabout = icon("roundabout", circle(12f, 11f, 4f), "M12 15v6", "M15 8l3-3", "M14 5h4v4", width = 2.4f)
+    val arrive = icon("arrive", "M5 21V4", "M5 4h11l-2 4 2 4H5", width = 2.4f)
+
+    // Dashboard icons for the app buttons
+    val androidAuto = icon("androidAuto", "M12 3l8 18-8-5-8 5z")
+    val waze = icon("waze", "M5 16a8 8 0 1 1 6 3H9l-3 2v-3a4 4 0 0 1-1-2z", "M10 10h.01", "M15 10h.01", "M10 13.5a3 3 0 0 0 5 0")
+    val video = icon("video", "M7 5h10a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a4 4 0 0 1 4-4z", "M10 9l5 3-5 3z")
+    val phone = icon("phone", "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2")
+    val radio = icon("radio", "M5 8h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z", "M7 8l10-5", circle(8f, 14f, 2f), "M14 13h4", "M14 16h4")
+    val map = icon("map", "M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z", "M9 4v14", "M15 6v14")
+    val podcast = icon("podcast", "M12 11a1 1 0 1 0 0 .01", "M8.5 15.5a5 5 0 1 1 7 0", "M6 18a8.5 8.5 0 1 1 12 0", "M12 15v6")
+    val bluetooth = icon("bluetooth", "M7 7l10 10-5 4V3l5 4L7 17")
+    val camera = icon("camera", "M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z", circle(12f, 13f, 3.5f))
+    val globe = icon("globe", circle(12f, 12f, 9f), "M3 12h18", "M12 3a14 14 0 0 1 0 18", "M12 3a14 14 0 0 0 0 18")
+    val folder = icon("folder", "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z")
+    val car = icon("car", "M5 16l1.5-5A2 2 0 0 1 8.4 9.5h7.2a2 2 0 0 1 1.9 1.5L19 16", "M4 16h16v3H4z", "M7 19v1.5", "M17 19v1.5")
+    val star = icon("star", "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z")
+    val headphones = icon("headphones", "M4 15v-3a8 8 0 0 1 16 0v3", "M4 15h3v5H5a1 1 0 0 1-1-1z", "M20 15h-3v5h2a1 1 0 0 0 1-1z")
+
+    /** The icons a person can choose for an app button, by the key Settings stores. */
+    val choices: List<Pair<String, ImageVector>> by lazy {
+        listOf(
+            "android_auto" to androidAuto, "waze" to waze, "map" to map, "music" to music, "headphones" to headphones,
+            "video" to video, "podcast" to podcast, "radio" to radio, "phone" to phone, "bluetooth" to bluetooth,
+            "camera" to camera, "globe" to globe, "folder" to folder, "car" to car, "gauge" to gauge, "star" to star,
+            "settings" to settings, "apps" to apps,
+        )
+    }
+
+    fun byKey(key: String): ImageVector? = choices.firstOrNull { it.first == key }?.second
 }
