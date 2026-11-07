@@ -102,16 +102,17 @@ fun Dial(
             }
 
             if (bottomArc) {
-                // Across the bottom of the face, filling from the left; centred on the dial, so it keeps its curve
+                // Low across the middle of the face, filling from the left; centred on the dial, so it keeps its curve,
+                // and short enough to stay clear of the 0 and 6
                 val br = r * 0.854f
                 val tl = Offset(c.x - br, c.y - br)
                 val sz = Size(br * 2, br * 2)
                 val w = r * 0.04f
-                drawArc(C.track, 125f, -70f, false, tl, sz, style = Stroke(w, cap = StrokeCap.Round))
+                drawArc(C.track, 115f, -50f, false, tl, sz, style = Stroke(w, cap = StrokeCap.Round))
                 val f = (bottomFill ?: 0f).coerceIn(0f, 1f)
                 if (bottomFill != null && f > 0.01f) {
-                    drawArc(C.red.copy(alpha = 0.25f), 125f, -70f * f, false, tl, sz, style = Stroke(w * 2.6f, cap = StrokeCap.Round))
-                    drawArc(C.red, 125f, -70f * f, false, tl, sz, style = Stroke(w, cap = StrokeCap.Round))
+                    drawArc(C.red.copy(alpha = 0.25f), 115f, -50f * f, false, tl, sz, style = Stroke(w * 2.6f, cap = StrokeCap.Round))
+                    drawArc(C.red, 115f, -50f * f, false, tl, sz, style = Stroke(w, cap = StrokeCap.Round))
                 }
             }
 
