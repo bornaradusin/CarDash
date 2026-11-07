@@ -9,4 +9,9 @@ class CarDashApp : Application() {
     val obd: ObdLink by lazy { ObdLink(this) }
 
     val settings: Settings by lazy { Settings(this) }
+
+    override fun onCreate() {
+        super.onCreate()
+        obd.fuelFactor = settings.fuelFactor.value
+    }
 }

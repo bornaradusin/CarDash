@@ -45,6 +45,16 @@ class Settings(context: Context) {
         _musicApp.value = pkg
     }
 
+    private val _fuelFactor = MutableStateFlow(sp.getFloat("fuelFactor", 1f))
+    /** Scales the air-flow fuel figure to match the car's own. */
+    val fuelFactor: StateFlow<Float> = _fuelFactor
+
+    fun setFuelFactor(v: Float) {
+        val f = v.coerceIn(0.05f, 3f)
+        sp.edit().putFloat("fuelFactor", f).apply()
+        _fuelFactor.value = f
+    }
+
     private val _fullScreen = MutableStateFlow(sp.getBoolean("fullScreen", true))
     /** Hides the radio's own bars (a swipe from the edge brings them back). */
     val fullScreen: StateFlow<Boolean> = _fullScreen

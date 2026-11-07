@@ -125,6 +125,9 @@ class DashActions(
     val setName: (String) -> Unit,
     val setFullScreen: (Boolean) -> Unit,
     val saveRadioFiles: () -> Unit,
+    /** Matches fuel use to the car: what the car says it's using right now, in L/h. */
+    val matchFuel: (Float) -> Unit,
+    val resetFuel: () -> Unit,
 )
 
 /**
@@ -484,18 +487,27 @@ private fun NavPanel(nav: NavInfo) {
 private fun DrivePanel(obd: ObdState) {
     val r = obd.readings
     val t = obd.trip
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("THIS DRIVE", color = C.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
             Text(clock(t.drivingMs, hours = true), color = C.ink2, fontSize = 16.sp)
         }
         Bar("Accelerator pedal", r.pedalPct, 100f, r.pedalPct?.let { "${it.toInt()} %" })
         Bar("Engine load", r.loadPct, 100f, r.loadPct?.let { "${it.toInt()} %" })
+        Bar("Boost", r.boostBar?.coerceAtLeast(0f), 1.5f, r.boostBar?.let { "${fmt(it, 2)} bar" })
+        // L/100 km while moving, L/h standing still
+        val l100 = r.fuelL100
+        Bar(
+            "Fuel use",
+            if (l100 != null) l100 else r.fuelLph,
+            if (l100 != null) 25f else 10f,
+            if (l100 != null) "${fmt(l100, 1)} L/100" else r.fuelLph?.let { "${fmt(it, 1)} L/h" },
+        )
         Spacer(Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Stat("Fuel now", r.fuelL100?.let { fmt(it, 1) } ?: r.fuelLph?.let { fmt(it, 1) }, if (r.fuelL100 != null) "L/100" else "L/h", Modifier.weight(1f))
             Stat("Average", t.avgL100?.let { fmt(it.toFloat(), 1) }, "L/100", Modifier.weight(1f))
             Stat("Fuel used", if (t.fuelL > 0) fmt(t.fuelL.toFloat(), 2) else null, "L", Modifier.weight(1f))
+            Stat("Max boost", if (t.maxBoostBar > 0) fmt(t.maxBoostBar, 2) else null, "bar", Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Stat("Distance", fmt((t.meters / 1000).toFloat(), 1), "km", Modifier.weight(1f))
@@ -503,7 +515,7 @@ private fun DrivePanel(obd: ObdState) {
             Stat("Top speed", t.maxKmh.toInt().toString(), "km/h", Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Stat("Timing", r.timingDeg?.let { fmt(it, 1) }, "°", Modifier.weight(1f))
+            Stat("Max RPM", if (t.maxRpm > 0) "%,d".format(Locale.US, t.maxRpm.toInt()) else null, "", Modifier.weight(1f))
             Stat("Air flow", r.mafGs?.let { fmt(it, 1) }, "g/s", Modifier.weight(1f))
             Stat("Outside", r.ambientC?.let { "${it.toInt()}" }, "°C", Modifier.weight(1f))
         }
@@ -764,7 +776,7 @@ private fun Gauges(obd: ObdState, actions: DashActions) {
                 Triple("Accelerator", r.pedalPct?.let { "${it.toInt()}" }, "%"),
                 Triple("Engine load", r.loadPct?.let { "${it.toInt()}" }, "%"),
                 Triple("Fuel now", r.fuelL100?.let { fmt(it, 1) } ?: r.fuelLph?.let { fmt(it, 1) }, if (r.fuelL100 != null) "L/100" else "L/h"),
-                Triple("Timing", r.timingDeg?.let { fmt(it, 1) }, "°"),
+                Triple("Air flow", r.mafGs?.let { fmt(it, 1) }, "g/s"),
             )
             LazyVerticalGrid(
                 GridCells.Fixed(3),
@@ -984,6 +996,40 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                     )
                     Wide("Save radio files", actions.saveRadioFiles)
                     state.radioFiles?.let { Text(it, color = C.ink2, fontSize = 14.sp) }
+                }
+                Card("Fuel use") {
+                    val r = state.obd.readings
+                    Text(
+                        when {
+                            r.fuelRateLph != null -> "The engine reports its own fuel use: ${fmt(r.fuelRateLph, 1)} L/h"
+                            r.fuelLph != null -> "Now: ${fmt(r.fuelLph!!, 1)} L/h, worked out from the air flow" +
+                                if (r.fuelFactor != 1f) " (matched to the car: ×${fmt(r.fuelFactor, 2)})" else ""
+                            else -> "Not reading yet"
+                        },
+                        color = C.ink, fontSize = 16.sp,
+                    )
+                    Text(
+                        "If it doesn't match your car's computer, idle with the engine warm, type what the car shows in L/h and tap Match.",
+                        color = C.muted, fontSize = 14.sp,
+                    )
+                    var carSays by remember { mutableStateOf("") }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = carSays,
+                            onValueChange = { v -> carSays = v.filter { it.isDigit() || it == '.' || it == ',' }.take(5) },
+                            singleLine = true,
+                            placeholder = { Text("0.7", color = C.muted) },
+                            textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                            modifier = Modifier.width(120.dp),
+                        )
+                        Text("L/h", color = C.muted, fontSize = 16.sp)
+                        Box(Modifier.weight(1f)) {
+                            Wide("Match") { carSays.replace(',', '.').toFloatOrNull()?.let(actions.matchFuel) }
+                        }
+                    }
+                    if (r.fuelFactor != 1f) Wide("Undo matching", actions.resetFuel)
                 }
                 Card("Waze") {
                     Text(if (state.nav != null) "Navigating: shown on Home" else "Not navigating", color = C.ink, fontSize = 17.sp)

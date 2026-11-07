@@ -16,6 +16,10 @@ data class Readings(
     val pedalPct: Float? = null,
     val mafGs: Float? = null,
     val timingDeg: Float? = null,
+    /** The engine's own fuel figure, when it reports one. */
+    val fuelRateLph: Float? = null,
+    /** Matches the air-flow fuel figure to the car's (Settings → Fuel use); 1 = as worked out. */
+    val fuelFactor: Float = 1f,
     /** From the radio's CAN box, once that's wired up. */
     val odometerKm: Float? = null,
     val loadPct: Float? = null,
@@ -25,9 +29,13 @@ data class Readings(
     val milOn: Boolean? = null,
     val faultCount: Int? = null,
 ) {
-    /** Petrol used right now, litres an hour, from the air flow (14.7 parts air to 1 of petrol, 745 g a litre). */
-    val fuelLph: Float?
+    /** Petrol from the air flow alone (14.7 parts air to 1 of petrol, 745 g a litre), before matching to the car. */
+    val fuelLphRaw: Float?
         get() = mafGs?.let { it / 14.7f / 745f * 3600f }
+
+    /** Petrol used right now, litres an hour: the engine's own figure, else from the air flow. */
+    val fuelLph: Float?
+        get() = fuelRateLph ?: fuelLphRaw?.let { it * fuelFactor }
 
     /** Litres per 100 km at this moment, while moving. */
     val fuelL100: Float?
@@ -72,7 +80,14 @@ data class ObdState(
 )
 
 /** This drive, worked out from the speed readings while the car answers. */
-data class Trip(val meters: Double = 0.0, val drivingMs: Long = 0, val maxKmh: Float = 0f, val fuelL: Double = 0.0) {
+data class Trip(
+    val meters: Double = 0.0,
+    val drivingMs: Long = 0,
+    val maxKmh: Float = 0f,
+    val fuelL: Double = 0.0,
+    val maxBoostBar: Float = 0f,
+    val maxRpm: Float = 0f,
+) {
     val avgKmh: Double get() = if (drivingMs > 0) meters / 1000.0 / (drivingMs / 3_600_000.0) else 0.0
     /** Average consumption this drive, once it's gone far enough to mean something. */
     val avgL100: Double? get() = if (meters > 500) fuelL / (meters / 1000.0) * 100.0 else null

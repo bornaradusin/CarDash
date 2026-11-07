@@ -70,6 +70,18 @@ class MainActivity : ComponentActivity() {
                 applyFullScreen(it)
             },
             saveRadioFiles = { saveRadioFiles() },
+            matchFuel = { carSays ->
+                // The factor that turns the air-flow figure now into what the car says
+                val raw = app.obd.state.value.readings.fuelLphRaw
+                if (raw != null && raw > 0.05f && carSays > 0f) {
+                    app.settings.setFuelFactor(carSays / raw)
+                    app.obd.fuelFactor = app.settings.fuelFactor.value
+                }
+            },
+            resetFuel = {
+                app.settings.setFuelFactor(1f)
+                app.obd.fuelFactor = 1f
+            },
         )
 
         setContent {

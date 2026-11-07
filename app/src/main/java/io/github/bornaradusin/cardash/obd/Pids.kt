@@ -24,6 +24,7 @@ object Pids {
         return when (pid) {
             RPM -> b?.let { (256 * a + it) / 4f }
             MAF -> b?.let { (256 * a + it) / 100f }
+            FUEL_RATE -> b?.let { (256 * a + it) / 20f }
             TIMING -> a / 2f - 64f
             SPEED, MAP, BARO -> a
             COOLANT, INTAKE, OIL, AMBIENT -> a - 40
@@ -79,4 +80,6 @@ object Pids {
     const val MAF = 0x10
     /** Ignition timing advance, degrees before top dead centre. */
     const val TIMING = 0x0E
+    /** The engine's own fuel use, L/h: only newer cars report it. */
+    const val FUEL_RATE = 0x5E
 }

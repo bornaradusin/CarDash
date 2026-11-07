@@ -33,6 +33,8 @@ class ObdLink(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
     private var asked = false
+    /** Set from Settings: matches the air-flow fuel figure to the car's. */
+    @Volatile var fuelFactor = 1f
     private var pedalMin = 100f
     private var pedalMax = 80f
     @Volatile private var scanRequested = false
@@ -139,7 +141,7 @@ class ObdLink(private val context: Context) {
         // Finds the car's protocol; slow the first time, and fails while the ignition is off
         if (!wake(elm)) return
         // Boost, air flow and load come round more often: they change fastest
-        val slow = intArrayOf(Pids.MAP, Pids.MAF, Pids.LOAD, Pids.COOLANT, Pids.MAP, Pids.MAF, Pids.LOAD, Pids.INTAKE, Pids.TIMING, Pids.OIL, Pids.BARO, Pids.AMBIENT, VOLTS)
+        val slow = intArrayOf(Pids.MAP, Pids.MAF, Pids.LOAD, Pids.COOLANT, Pids.MAP, Pids.MAF, Pids.LOAD, Pids.INTAKE, Pids.FUEL_RATE, Pids.OIL, Pids.BARO, Pids.AMBIENT, VOLTS)
         val misses = mutableMapOf<Int, Int>()
         var next = 0
         var silent = 0
@@ -148,7 +150,7 @@ class ObdLink(private val context: Context) {
         var lastMil = 0L
         var lastRound = System.currentTimeMillis()
         while (coroutineContext.isActive) {
-            var r = _state.value.readings
+            var r = _state.value.readings.copy(fuelFactor = fuelFactor)
             var answered = false
             for (pid in intArrayOf(Pids.RPM, Pids.SPEED, Pids.PEDAL)) {
                 // The pedal is skipped on cars that don't report it
@@ -198,6 +200,8 @@ class ObdLink(private val context: Context) {
                     drivingMs = t.drivingMs + (if (kmh > 2) dt else 0L),
                     maxKmh = maxOf(t.maxKmh, kmh),
                     fuelL = t.fuelL + (r.fuelLph ?: 0f) * dt / 3_600_000.0,
+                    maxBoostBar = maxOf(t.maxBoostBar, r.boostBar ?: 0f),
+                    maxRpm = maxOf(t.maxRpm, r.rpm ?: 0f),
                 )
             }
             val rate = if (now - since >= 2_000) {
@@ -259,6 +263,7 @@ class ObdLink(private val context: Context) {
         Pids.THROTTLE -> r.copy(throttlePct = v)
         Pids.MAF -> r.copy(mafGs = v)
         Pids.TIMING -> r.copy(timingDeg = v)
+        Pids.FUEL_RATE -> r.copy(fuelRateLph = v)
         Pids.PEDAL -> {
             // The sensor doesn't read 0..100 %: the lowest seen is foot off, and flat out is at least 80 %
             pedalMin = minOf(pedalMin, v)
