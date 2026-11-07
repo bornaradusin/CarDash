@@ -82,6 +82,8 @@ class MainActivity : ComponentActivity() {
                 }
             },
             setCanPick = { role, pick -> app.settings.setCanPick(role, pick) },
+            uninstall = { pkg -> Apps.uninstall(this, pkg) },
+            appInfo = { pkg -> Apps.info(this, pkg) },
             resetFuel = {
                 app.settings.setFuelFactor(1f)
                 app.obd.fuelFactor = 1f

@@ -4,7 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
 
-data class AppEntry(val pkg: String, val label: String, val icon: Drawable)
+/** [removable]: installed by the person (or an update of the radio's own), so it can be uninstalled. */
+data class AppEntry(val pkg: String, val label: String, val icon: Drawable, val removable: Boolean = true)
 
 /** The radio's installed apps, for the app buttons and the app drawer. */
 object Apps {
@@ -17,9 +18,29 @@ object Apps {
             .map { it.activityInfo }
             .filter { it.packageName != context.packageName }
             .distinctBy { it.packageName }
-            .map { AppEntry(it.packageName, it.loadLabel(pm).toString(), it.loadIcon(pm)) }
+            .map {
+                val flags = it.applicationInfo.flags
+                val builtIn = flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0 &&
+                    flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
+                AppEntry(it.packageName, it.loadLabel(pm).toString(), it.loadIcon(pm), removable = !builtIn)
+            }
             .sortedBy { it.label.lowercase() }
             .toList()
+    }
+
+    /** Android's own "Uninstall this app?" prompt. */
+    fun uninstall(context: Context, pkg: String) {
+        context.startActivity(
+            Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
+    /** The app's page in Android settings: storage, permissions, force stop. */
+    fun info(context: Context, pkg: String) {
+        context.startActivity(
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$pkg"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 
     fun launch(context: Context, pkg: String): Boolean {

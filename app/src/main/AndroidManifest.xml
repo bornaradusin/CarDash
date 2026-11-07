@@ -9,6 +9,9 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- Uninstall from the app list (Android still asks first) -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
     <!-- The radio's CAN service (oil temperature, odometer) -->
     <queries>
         <package android:name="com.syu.ms" />

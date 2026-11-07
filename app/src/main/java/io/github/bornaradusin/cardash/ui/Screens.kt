@@ -139,6 +139,8 @@ class DashActions(
     val matchFuel: (Float) -> Unit,
     val resetFuel: () -> Unit,
     val setCanPick: (CanRole, CanPick?) -> Unit,
+    val uninstall: (String) -> Unit,
+    val appInfo: (String) -> Unit,
 )
 
 /**
@@ -195,7 +197,7 @@ fun CarDash(state: DashState, actions: DashActions) {
                 HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
                     when (page) {
                         PAGE_APPS -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
-                            AppsScreen(state.apps) { actions.launch(it) }
+                            AppsScreen(state.apps, actions)
                         }
                         PAGE_HOME -> Home(state, actions) { scope.launch { pager.animateScrollToPage(PAGE_APPS) } }
                         else -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
@@ -961,7 +963,24 @@ private fun Faults(obd: ObdState, actions: DashActions) {
 // ---------- apps ----------
 
 @Composable
-private fun AppsScreen(apps: List<AppEntry>, launch: (String) -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun AppsScreen(apps: List<AppEntry>, actions: DashActions) {
+    var holding by remember { mutableStateOf<AppEntry?>(null) }
+    holding?.let { app ->
+        AlertDialog(
+            onDismissRequest = { holding = null },
+            containerColor = C.panelHi,
+            title = { Text(app.label, color = C.ink) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (app.removable) Wide("Uninstall") { holding = null; actions.uninstall(app.pkg) }
+                    else Text("This app is part of the radio and can't be uninstalled; it can be turned off in App info.", color = C.muted, fontSize = 14.sp)
+                    Wide("App info") { holding = null; actions.appInfo(app.pkg) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { holding = null }) { Text("Cancel", color = C.ink2) } },
+        )
+    }
     LazyVerticalGrid(
         GridCells.Fixed(7),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -976,7 +995,7 @@ private fun AppsScreen(apps: List<AppEntry>, launch: (String) -> Unit) {
                     .clip(RoundedCornerShape(18.dp))
                     .background(C.panel)
                     .border(1.dp, C.line, RoundedCornerShape(18.dp))
-                    .clickable { launch(app.pkg) }
+                    .combinedClickable(onClick = { actions.launch(app.pkg) }, onLongClick = { holding = app })
                     .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
