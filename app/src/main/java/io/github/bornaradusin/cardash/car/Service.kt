@@ -99,9 +99,9 @@ fun statusOf(item: ServiceItem, carKm: Double?, today: LocalDate, kmBefore: Int,
     val daysLeft = nextDate?.let { ChronoUnit.DAYS.between(today, it) }
 
     val usedKm = if (kmLeft != null && item.everyKm != null && item.everyKm > 0) 1f - kmLeft.toFloat() / item.everyKm else null
-    val usedTime = if (daysLeft != null && last != null && nextDate != null) {
+    val usedTime = if (last != null && nextDate != null) {
         val span = ChronoUnit.DAYS.between(last, nextDate).coerceAtLeast(1)
-        1f - daysLeft.toFloat() / span
+        1f - ChronoUnit.DAYS.between(today, nextDate).toFloat() / span
     } else null
     val byKm = when {
         usedKm == null -> false
