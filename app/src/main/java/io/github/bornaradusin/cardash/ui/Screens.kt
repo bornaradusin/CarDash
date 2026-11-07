@@ -398,7 +398,7 @@ private fun SpeedDial(r: Readings, tripMeters: Double, size: Dp) {
         // The odometer from the radio's CAN box once that's read; until then, this drive's distance. Just the number
         Text(
             r.odometerKm?.let { "%,d".format(Locale.US, it.toLong()) } ?: fmt((tripMeters / 1000).toFloat(), 1),
-            color = C.ink, fontSize = (size.value * 0.058f).sp, fontWeight = FontWeight.Bold,
+            color = C.ink, fontSize = (size.value * 0.066f).sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.align(Alignment.TopCenter).padding(top = size * 0.818f),
         )
     }
