@@ -9,16 +9,18 @@ The page CarDash opens on, and the one the radio's Home button brings you back t
 - **2 due** (only while something needs servicing): tap it for the [Service](Service) page.
 - **OBD**: green while the car is answering.
 - **Outside temperature**, when the car reports it.
-- **The gear**: [Settings](Settings).
+- **The cog**: [Settings](Settings).
 
 ## The dials
 
-- **RPM**, with the coolant temperature as a number and a small arc low in the dial.
+- **RPM**, with the gear you're in big in the middle, and the coolant temperature as a number and a small arc low in the dial. The red zone is drawn like the TT's own: a thin red line along the ends of the ticks from 4,500, with close-set dashes just before it.
+- **Change up / change down**: the gear lever icons in the empty corners at the top, between the big dials and the middle box: change down on the left, change up on the right. They only appear when it's time to change, set for the TT's 2.0 TDI: change up at 2,000 rpm (2,500 with the pedal past half way), so the next gear lands back where the engine makes its most torque, 1,750 to 2,500 rpm, and never into fewer than 1,500 rpm; change down under 1,300 rpm with your foot down, or under 1,100 rpm at all, where a diesel starts to judder and the dual-mass flywheel takes the strain. Turn them off in **Settings › Gear**.
+- **The gear** is worked out, as the car doesn't send it: in each gear the engine turns a fixed number of rpm per km/h, and CarDash learns those figures as you drive. It shows once it has found every gear (drive a few seconds in each); between gears, with the clutch down or coasting, it shows "–". The number of gears and **Learn the gears again** are in **Settings › Gear**.
 - **Speed**, with the car's odometer under it once the [CAN box](Radios-CAN-box) gives it (until then, this drive's distance).
 
 ## The four small gauges
 
-Under the middle box: oil temperature, boost, intake air and battery voltage. Until the radio's CAN box gives the oil temperature, the first one shows engine load. A gauge turns brighter past its warning level: oil over 130 °C, intake air over 55 °C, battery under 11.8 V.
+Under the middle box: oil temperature (the engine icon), boost (the turbo), intake air (the intake manifold) and battery voltage. Until the radio's CAN box gives the oil temperature, the first one shows engine load. A gauge turns brighter past its warning level: oil over 130 °C, intake air over 55 °C, battery under 11.8 V.
 
 ## The box in the middle
 
@@ -56,7 +58,7 @@ Over the speed set in **Settings › Speed warning** (150 km/h unless you change
 
 Over the revs set in **Settings › Shift up** (2,500 rpm unless you change it), **SHIFT UP** comes up across the whole screen the same way, with the revs under it. It waits most of a second, so a gear change doesn't flash it, and goes once you're 300 rpm under. It doesn't come up in top gear: CarDash learns top gear the first time you drive steadily in it over 50 km/h for a few seconds, and remembers it. It doesn't come up below 5 km/h either, or while the speed warning is showing.
 
-![Shift up: the revs climb past 2,500, then the change up takes it away](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/shift-up.gif)
+![Shift up: the revs climbing from 2,500 to 3,000](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/shift-up.gif)
 
 ## Typing
 

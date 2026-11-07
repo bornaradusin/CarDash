@@ -152,6 +152,9 @@ class MainActivity : ComponentActivity() {
             setShiftWarnOn = { app.settings.setShiftWarnOn(it) },
             setShiftWarnRpm = { app.settings.setShiftWarnRpm(it) },
             setTopGear = { app.settings.setTopGear(it) },
+            setGearCount = { app.gears.setCount(it) },
+            setShiftHints = { app.settings.setShiftHints(it) },
+            relearnGears = { app.gears.forget() },
             search = { q -> Places.search(q, app.nav.state.value.here, app.settings.googleKey.value) },
             preview = { p -> app.nav.preview(p.pos) },
             go = { p, route ->
@@ -209,6 +212,11 @@ class MainActivity : ComponentActivity() {
             val shiftWarnOn by app.settings.shiftWarnOn.collectAsState()
             val shiftWarnRpm by app.settings.shiftWarnRpm.collectAsState()
             val topGear by app.settings.topGear.collectAsState()
+            val gear by app.gears.gear.collectAsState()
+            val gearsFound by app.gears.found.collectAsState()
+            val gearCount by app.gears.count.collectAsState()
+            val gearRatios by app.gears.learnt.collectAsState()
+            val shiftHints by app.settings.shiftHints.collectAsState()
             val accent by app.settings.accent.collectAsState()
             val spoken by app.settings.spoken.collectAsState()
             val googleKey by app.settings.googleKey.collectAsState()
@@ -256,6 +264,11 @@ class MainActivity : ComponentActivity() {
                 shiftWarnOn = shiftWarnOn,
                 shiftWarnRpm = shiftWarnRpm,
                 topGear = topGear,
+                gear = gear,
+                gearsFound = gearsFound,
+                gearCount = gearCount,
+                gearRatios = gearRatios,
+                shiftHints = shiftHints,
                 accent = accent,
                 spoken = spoken,
                 googleKey = googleKey,

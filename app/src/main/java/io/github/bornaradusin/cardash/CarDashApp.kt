@@ -8,6 +8,7 @@ import io.github.bornaradusin.cardash.car.effectivePicks
 import io.github.bornaradusin.cardash.nav.Navigator
 import io.github.bornaradusin.cardash.nav.OfflineMaps
 import io.github.bornaradusin.cardash.nav.Places
+import io.github.bornaradusin.cardash.obd.Gears
 import io.github.bornaradusin.cardash.obd.Link
 import io.github.bornaradusin.cardash.obd.ObdLink
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,9 @@ class CarDashApp : Application() {
     /** Map areas saved for driving without signal. */
     val offlineMaps: OfflineMaps by lazy { OfflineMaps(this) { settings.wifiOnly.value } }
 
+    /** Which gear the car is in, worked out from the revs and the speed. */
+    val gears: Gears by lazy { Gears(this) }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
@@ -61,6 +65,10 @@ class CarDashApp : Application() {
         // Distance from OBD speed, for when the CAN box gives no odometer
         scope.launch {
             obd.state.map { it.trip.meters }.distinctUntilChanged().collect { service.onDriven(it) }
+        }
+        // The gear, from each reading
+        scope.launch {
+            obd.state.map { it.readings.rpm to it.readings.speedKmh }.distinctUntilChanged().collect { (rpm, kmh) -> gears.feed(rpm, kmh) }
         }
         // A new drive: the car answers again after a few minutes without it (or CarDash started)
         scope.launch {

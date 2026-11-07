@@ -43,9 +43,16 @@ object Ic {
     val external = icon("external", "M7 17L17 7", "M9 7h8v8", width = 2.4f)
     val turn = icon("turn", "M7 20V11a3 3 0 0 1 3-3h9", "M15 4l4 4-4 4", width = 2.4f)
     val oil = icon("oil", "M3 10h4l2-2h5l7 3-5 6H6l-3-3z", "M20 15c0 1 .7 2 1 2")
-    val boost = icon("boost", circle(12f, 12f, 9f), circle(12f, 12f, 2f), "M12 3v4", "M19.8 16.5l-3.5-2", "M4.2 16.5l3.5-2")
+    // A turbo: the snail housing with its outlet, and the compressor wheel inside
+    val boost = icon("boost", "M16.6 9.6H21V5H10A7 7 0 1 0 16.6 9.6",
+        "M10 12c0-1.6.8-2.4 2-2.6", "M10 12c1.39.8 1.68 1.89 1.25 3.03", "M10 12c-1.39.8-2.48.51-3.25-.43")
     val battery = icon("battery", "M5 7h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z", "M7 4v3", "M17 4v3", "M7 13h3", "M15 11.5v3", "M13.5 13h3")
     val air = icon("air", "M3 8h11a3 3 0 1 0-3-3", "M3 12h16a3 3 0 1 1-3 3", "M3 16h7")
+    // The check-engine shape without the exclamation mark, for the engine's temperature
+    val engine = icon("engine", "M6 10h2l2-2h5l2 2v2h2v-2h2v8h-2v-2h-2v2l-2 2H8l-2-2z", "M3 11v6", "M3 14h3", "M10 5h5", "M12.5 5v3")
+    // An intake manifold: the throttle inlet, the plenum and its runners
+    val intake = icon("intake", "M3 6.5h4", "M7 4.5h12a2 2 0 0 1 2 2a2 2 0 0 1-2 2H7z",
+        "M8.5 8.5c0 4-2 6-2 10", "M12.5 8.5v10", "M16.5 8.5c0 4 2 6 2 10", "M4.5 20h16")
     val coolant = icon("coolant", "M12 3v11", circle(12f, 17f, 3f), "M12 7h3", "M12 10h3")
     val fuel = icon("fuel", "M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16", "M3 21h12", "M14 9h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V8l-3-3", "M7 7h4")
     val check = icon("check", circle(12f, 12f, 9f), "M8 12l3 3 5-6")

@@ -15,6 +15,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -160,6 +162,13 @@ data class DashState(
     val shiftWarnOn: Boolean,
     val shiftWarnRpm: Int,
     val topGear: Float,
+    /** The gear the car is in (worked out), how many gears have been found, and how many there are. */
+    val gear: Int?,
+    val gearsFound: Int,
+    val gearCount: Int,
+    /** Each gear's rpm per km/h, 1st first, once learnt; and whether the change up / down signs show. */
+    val gearRatios: List<Float>,
+    val shiftHints: Boolean,
     /** The accent colour, ARGB. */
     val accent: Int,
     val spoken: Boolean,
@@ -214,6 +223,10 @@ class DashActions(
     val setShiftWarnRpm: (Int) -> Unit,
     /** Saves top gear's rpm per km/h once it's been seen steady. */
     val setTopGear: (Float) -> Unit,
+    val setGearCount: (Int) -> Unit,
+    val setShiftHints: (Boolean) -> Unit,
+    /** Forgets the learnt gears and starts again. */
+    val relearnGears: () -> Unit,
     // Navigation
     val search: suspend (String) -> List<Place>,
     val preview: suspend (Place) -> Route?,
@@ -521,6 +534,83 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
     Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1A1E26)))
 }
 
+/**
+ * When to change gear in the TT's 2.0 TDI for fuel economy without lugging the dual-mass flywheel.
+ * Its 350 Nm comes between 1,750 and 2,500 rpm: change up at 2,000 (2,500 when pulling hard, pedal
+ * past half) so the next gear lands back on that plateau, but never into fewer than 1,500 rpm; change
+ * down under 1,300 rpm with the foot down, or under 1,100 rpm at all, which is where a diesel
+ * starts to judder and the flywheel takes the strain. Up is +1, down -1, with the gear to go to
+ * once CarDash has learnt the gears (null before that).
+ */
+internal fun shiftHint(rpm: Float?, kmh: Float?, pedal: Float?, gear: Int?, ratios: List<Float>): Pair<Int, Int?>? {
+    if (rpm == null || kmh == null || kmh < 5f) return null
+    val known = ratios.isNotEmpty()
+    // Gears learnt but none matching: changing gear, clutch down or coasting
+    if (known && gear == null) return null
+    val heavy = (pedal ?: 0f) >= 50f
+    val upAt = if (heavy) 2500f else 2000f
+    if (rpm >= upAt) {
+        if (!known) return 1 to null
+        val g = gear ?: return null
+        if (g >= ratios.size) return null
+        val next = rpm * ratios[g] / ratios[g - 1]
+        return if (next >= 1500f) 1 to g + 1 else null
+    }
+    val lugging = rpm < 1100f || ((pedal ?: 0f) >= 30f && rpm < 1300f)
+    if (lugging && kmh >= 10f) {
+        if (!known) return if (kmh >= 20f) -1 to null else null
+        val g = gear ?: return null
+        if (g <= 1) return null
+        val lower = rpm * ratios[g - 2] / ratios[g - 1]
+        return if (lower <= 3000f) -1 to g - 1 else null
+    }
+    return null
+}
+
+/** The hint, held for most of a second after it stops applying, so it doesn't flicker. */
+@Composable
+private fun rememberShiftHint(state: DashState): Pair<Int, Int?>? {
+    val r = state.obd.readings
+    val now = shiftHint(r.rpm, r.speedKmh, r.pedalPct, state.gear, state.gearRatios)
+    val held = remember { arrayOfNulls<Pair<Int, Int?>>(1) }
+    val since = remember { longArrayOf(0L) }
+    val t = System.currentTimeMillis()
+    if (now != null) {
+        held[0] = now
+        since[0] = t
+    } else if (t - since[0] > 800) {
+        held[0] = null
+    }
+    return held[0]
+}
+
+/**
+ * The change up / change down icons, in the empty corners at the top between the big dials and the
+ * middle box: change down on the left, change up on the right. Nothing there until it's time to
+ * change; with the big map (no RPM dial) both sit side by side in the right-hand corner.
+ */
+@Composable
+private fun BoxScope.ShiftHintIcons(state: DashState, big: Boolean) {
+    if (!state.shiftHints) return
+    val hint = rememberShiftHint(state) ?: return
+    val accent = C.red
+    val up = hint.first > 0
+    val vector = remember(up, accent) { if (up) ShiftIcons.up(accent) else ShiftIcons.down(accent) }
+    val w = if (big) 52.dp else 64.dp
+    val h = w * (if (up) 480f / 360f else 450f / 360f)
+    // The middle box starts at 8 + DIAL + 8 from the left and ends as far in from the right
+    val x = when {
+        big && up -> 1280.dp - DIAL - 16.dp + 70.dp
+        big -> 1280.dp - DIAL - 16.dp + 10.dp
+        up -> 1280.dp - DIAL - 16.dp + 50.dp - w / 2
+        else -> DIAL + 16.dp - 50.dp - w / 2
+    }
+    Image(
+        vector, if (up) "Change up" else "Change down",
+        modifier = Modifier.align(Alignment.TopStart).offset(x = x, y = if (up) 23.dp else 29.dp).width(w).height(h),
+    )
+}
+
 @Composable
 private fun NameDialog(name: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf(name) }
@@ -569,7 +659,7 @@ private fun Home(state: DashState, actions: DashActions, centre: PagerState, ope
             ) {
                 // The two big dials sit in the middle of the height: the same space above them as below
                 // (the Row's 10 dp at the bottom is made up with half of it here)
-                if (!big) Box(Modifier.align(Alignment.CenterVertically).offset(y = 5.dp)) { RpmDial(r, DIAL) }
+                if (!big) Box(Modifier.align(Alignment.CenterVertically).offset(y = 5.dp)) { RpmDial(r, state.gear, DIAL) }
                 // The box from just under the divider, the small gauges under it, just above the bottom bar
                 Column(
                     Modifier.weight(1f).fillMaxHeight().padding(top = GAUGE_TOP),
@@ -592,29 +682,42 @@ private fun Home(state: DashState, actions: DashActions, centre: PagerState, ope
                 }
                 Box(Modifier.align(Alignment.CenterVertically).offset(y = 5.dp)) { SpeedDial(r, state.obd.trip.meters, DIAL) }
             }
+            ShiftHintIcons(state, big)
         }
         BottomBar(state, actions, allApps)
     }
 }
 
+
 @Composable
 private fun SmallGauges(r: Readings) {
     // Oil once the radio's CAN box is read; until then, engine load
-    if (r.oilC != null) RoundGauge(Ic.oil, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 130f, diameter = GAUGE)
+    if (r.oilC != null) RoundGauge(Ic.engine, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 130f, diameter = GAUGE)
     else RoundGauge(Ic.gauge, "Engine load", r.loadPct, 0f, 100f, r.loadPct?.let { "${it.toInt()}" }, "%", diameter = GAUGE)
     RoundGauge(Ic.boost, "Boost", r.boostBar, 0f, 1.5f, r.boostBar?.let { fmt(it, 1) }, "bar", diameter = GAUGE)
-    RoundGauge(Ic.air, "Intake air", r.intakeC, 0f, 70f, r.intakeC?.let { "${it.toInt()}" }, "°C", warnAbove = 55f, diameter = GAUGE)
+    RoundGauge(Ic.intake, "Intake air", r.intakeC, 0f, 70f, r.intakeC?.let { "${it.toInt()}" }, "°C", warnAbove = 55f, diameter = GAUGE)
     RoundGauge(Ic.battery, "Battery", r.volts, 11f, 15f, r.volts?.let { fmt(it, 1) }, "V", warnBelow = 11.8f, diameter = GAUGE)
 }
 
 @Composable
-private fun RpmDial(r: Readings, size: Dp) {
+private fun RpmDial(r: Readings, gear: Int?, size: Dp) {
     Dial(
         value = r.rpm, max = 6000f, major = 1000f, minor = 250f, mid = 500f, redFrom = 4500f,
         label = { (it / 1000).toInt().toString() }, labelSize = 0.094f,
         bottomArc = true, bottomFill = r.coolantC?.let { (it - 40f) / 100f },
         modifier = Modifier.size(size),
     ) {
+        // The gear in the middle, as the speed is in the other dial (worked out: "–" between gears)
+        Box(
+            Modifier.size(size * 0.214f).clip(CircleShape).background(Color(0xFF0A0C10)).border(2.dp, C.line, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                gear?.toString() ?: "–",
+                color = if (gear == null) C.muted else C.ink, fontSize = (size.value * 0.15f).sp,
+                fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic, maxLines = 1, softWrap = false,
+            )
+        }
         Row(
             Modifier.align(Alignment.TopCenter).padding(top = size * 0.72f),
             verticalAlignment = Alignment.CenterVertically,
@@ -633,16 +736,15 @@ private fun SpeedDial(r: Readings, tripMeters: Double, size: Dp) {
         modifier = Modifier.size(size),
     ) {
         Box(
-            Modifier.size(size * 0.41f).clip(CircleShape).background(Color(0xFF0A0C10)).border(2.dp, C.line, CircleShape),
+            Modifier.size(size * 0.214f).clip(CircleShape).background(Color(0xFF0A0C10)).border(2.dp, C.line, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    r.speedKmh?.toInt()?.toString() ?: "–",
-                    color = C.ink, fontSize = (size.value * 0.17f).sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
-                )
-                Text("km/h", color = C.muted, fontSize = (size.value * 0.038f).sp)
-            }
+            Text(
+                r.speedKmh?.toInt()?.toString() ?: "–",
+                // Small enough that 222 fits the circle
+                color = C.ink, fontSize = (size.value * 0.09f).sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
+                maxLines = 1, softWrap = false,
+            )
         }
         // The odometer from the radio's CAN box once that's read; until then, this drive's distance. Just the number
         Text(
@@ -1346,6 +1448,32 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                             more = { actions.setSpeedWarnKmh(state.speedWarnKmh + Settings.SPEED_WARN_STEP) },
                         )
                         Text("It goes away once you're 5 km/h under again.", color = C.muted, fontSize = 14.sp)
+                    }
+                }
+                Card("Gear") {
+                    Text("The gear you're in, in the middle of the RPM dial", color = C.ink, fontSize = 17.sp)
+                    Text("The car doesn't send it, so CarDash learns each gear's revs per km/h as you drive.", color = C.muted, fontSize = 14.sp)
+                    Stepper(
+                        "Gears", "${state.gearCount}",
+                        less = { actions.setGearCount(state.gearCount - 1) },
+                        more = { actions.setGearCount(state.gearCount + 1) },
+                    )
+                    Text(
+                        if (state.gearsFound >= state.gearCount) "Learnt: all ${state.gearCount} gears."
+                        else "Learning: ${state.gearsFound} of ${state.gearCount} found. Drive a few seconds in each gear and it shows once it knows them all.",
+                        color = C.muted, fontSize = 14.sp,
+                    )
+                    Wide("Learn the gears again") { actions.relearnGears() }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Change up / down signs", color = C.ink, fontSize = 17.sp)
+                            Text("By the dials, only when it's time: for economy without lugging the engine", color = C.muted, fontSize = 14.sp)
+                        }
+                        Switch(
+                            checked = state.shiftHints,
+                            onCheckedChange = actions.setShiftHints,
+                            colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
+                        )
                     }
                 }
                 Card("Shift up") {

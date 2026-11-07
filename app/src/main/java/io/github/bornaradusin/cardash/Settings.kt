@@ -129,6 +129,15 @@ class Settings(context: Context) {
         _shiftWarnRpm.value = r
     }
 
+    private val _shiftHints = MutableStateFlow(sp.getBoolean("shiftHints", true))
+    /** The change up / change down icons by the dials, shown only when it's time to change. */
+    val shiftHints: StateFlow<Boolean> = _shiftHints
+
+    fun setShiftHints(v: Boolean) {
+        sp.edit().putBoolean("shiftHints", v).apply()
+        _shiftHints.value = v
+    }
+
     private val _topGear = MutableStateFlow(sp.getFloat("topGearRpmPerKmh", 0f))
     /**
      * Engine rpm per km/h in top gear, learnt while driving (the lowest steady figure seen), so

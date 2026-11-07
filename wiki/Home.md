@@ -13,7 +13,7 @@ Swipe left and right between four pages. The dots under the clock show where you
 | [Gauges](Gauges) | Every reading the car gives, and the engine's fault codes |
 | [Service](Service) | Oil, filters, brake fluid and anything you add, counted down from the car's odometer |
 
-[Settings](Settings) open from the gear, top right.
+[Settings](Settings) open from the cog, top right.
 
 ## Start here
 

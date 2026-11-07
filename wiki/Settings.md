@@ -1,4 +1,4 @@
-Open Settings from the gear, top right. The back arrow, or the radio's Home button, closes them.
+Open Settings from the cog, top right. The back arrow, or the radio's Home button, closes them.
 
 ![Settings](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/settings.gif)
 
@@ -9,6 +9,7 @@ Open Settings from the gear, top right. The back arrow, or the radio's Home butt
 | Music | The app Play starts when nothing is playing |
 | Screen | **Full screen** hides the radio's own bars (swipe from the edge to see them). **Make CarDash the home screen** |
 | Speed warning | **Warn me when I'm too fast**, and the speed: 50 to 250 km/h in steps of 10 (150 to start with). See [Home](Home-page#the-speed-warning) |
+| Gear | The gear shown in the RPM dial: how many **Gears** the gearbox has (6 to start with), how many CarDash has learnt so far, **Learn the gears again**, and the **Change up / down** icons by the dials. See [Home](Home-page#the-dials) |
 | Shift up | **Tell me to change up**, and the revs: 1,500 to 6,000 rpm in steps of 100 (2,500 to start with). Not in top gear. See [Home](Home-page#shift-up) |
 | Navigation | **Spoken directions** on or off, **Big map on a route**, and **Google key for Eircodes**: see [Navigation](Navigation) |
 | Permissions | **Notification access**, for Google Maps' next turn and the music controls. **Location**, for the map and directions |
