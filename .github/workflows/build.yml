@@ -54,8 +54,9 @@ jobs:
           # Spaces or line breaks picked up when the secret was pasted don't count
           PASSWORD=$(printf '%s' "$PASSWORD" | tr -d ' \t\r\n')
           if [ -n "$PASSWORD" ] && [ -f signing/cardash.jks.enc ]; then
+            openssl version
             if openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in signing/cardash.jks.enc -out "$RUNNER_TEMP/cardash.jks" -pass env:PASSWORD \
-              && keytool -list -keystore "$RUNNER_TEMP/cardash.jks" -storepass "$PASSWORD" > /dev/null 2>&1; then
+              && keytool -list -keystore "$RUNNER_TEMP/cardash.jks" -storepass "$PASSWORD" 2>&1 | tail -3; then
               echo "::add-mask::$PASSWORD"
               echo "CARDASH_KEYSTORE=$RUNNER_TEMP/cardash.jks" >> "$GITHUB_ENV"
               echo "CARDASH_KEYSTORE_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
