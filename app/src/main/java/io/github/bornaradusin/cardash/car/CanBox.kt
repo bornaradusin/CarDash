@@ -200,7 +200,8 @@ data class Doors(
     companion object {
         /** Codes 0-5 on this CAN box: bonnet, front left, front right, rear left, rear right, boot. */
         fun from(values: Map<Int, CanValue>): Doors {
-            fun open(code: Int) = values[code]?.ints?.firstOrNull() == 1
+            // Anything but 0 counts as open: some CAN boxes send 1, others a bit pattern
+            fun open(code: Int) = (values[code]?.ints?.firstOrNull() ?: 0) != 0
             return Doors(open(0), open(1), open(2), open(3), open(4), open(5))
         }
     }
