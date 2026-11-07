@@ -1,6 +1,6 @@
 The page CarDash opens on, and the one the radio's Home button brings you back to.
 
-![Home](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/home.gif)
+![Home, flat out from standstill to top speed through all six gears (Shift up and the speed warning turned off for this one)](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/home.gif)
 
 ## Across the top
 
