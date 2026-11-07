@@ -2,6 +2,7 @@
 
 - [Setting up](Setting-up)
 - [Home](Home-page)
+- [Navigation](Navigation)
 - [Gauges](Gauges)
 - [Service](Service)
 - [Apps](Apps)

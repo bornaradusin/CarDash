@@ -20,5 +20,3 @@ What you've picked shows at the top of the card; ✕ takes it away again.
 ## Nothing received?
 
 If the card says the radio has no CAN service CarDash can reach, your radio doesn't have the service CarDash talks to. Everything else still works from OBD, and the [Service](Service) page lets you type the odometer in instead.
-
-**Save radio files** (Android 10 or newer) copies the radio's Vehicle settings app and its other car, CAN and MCU apps to *Download/CarDash*, with a list of every app, for a closer look at how another radio reads its CAN box.

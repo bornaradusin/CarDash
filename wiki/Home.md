@@ -7,7 +7,7 @@ Swipe left and right between four pages. The dots under the clock show where you
 | Page | What's on it |
 |---|---|
 | [Apps](Apps) | Everything installed on the radio |
-| [Home](Home-page) | RPM and speed dials, four small gauges, Waze's next turn or this drive, music and four app buttons |
+| [Home](Home-page) | RPM and speed dials, four small gauges, the middle box (this drive, directions or the 3D map), music and four app buttons |
 | [Gauges](Gauges) | Every reading the car gives, and the engine's fault codes |
 | [Service](Service) | Oil, filters, brake fluid and anything you add, counted down from the car's odometer |
 
@@ -17,6 +17,7 @@ Swipe left and right between four pages. The dots under the clock show where you
 
 - [Setting up](Setting-up): installing CarDash and the OBD dongle
 - [Service](Service): setting up the maintenance reminders
+- [Navigation](Navigation): the 3D map, Where to?, spoken directions and saved map areas
 - [Radio's CAN box](Radios-CAN-box): oil temperature, odometer and the rest from the radio
 - [Fuel use](Fuel-use): matching CarDash's fuel figures to the car's
 - [Troubleshooting](Troubleshooting)

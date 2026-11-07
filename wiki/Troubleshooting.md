@@ -22,10 +22,25 @@ The car doesn't report it over OBD. Oil temperature, odometer and range often co
 **Fuel use doesn't match the car**
 Match it in **Settings › Fuel use**: see [Fuel use](Fuel-use).
 
-## Waze and music
+## Navigation and music
 
-**Waze's next turn doesn't show**
-Allow **Notification access** in **Settings › Permissions**. **Settings › Waze** shows the last notification CarDash saw from Waze.
+**The map says *Finding the GPS…***
+The radio hasn't got a position yet. Under a roof or just after starting it can take a minute.
+
+**The map says *Allow location for the map***
+Tap **Allow location**, or allow it in **Settings › Permissions**. If you said no for good, CarDash opens its page in Android's settings: allow Location there.
+
+**The map stays blank**
+It needs the internet, unless that area is saved in **Settings › Offline map**.
+
+**The search doesn't find a place, or it's an Eircode**
+Tap **Directions in Google Maps** under the search: Google Maps opens and starts the route.
+
+**Google Maps' next turn doesn't show**
+Allow **Notification access** in **Settings › Permissions**. It shows in the middle box's Directions view while Google Maps is navigating.
+
+**No spoken directions**
+Check **Settings › Navigation › Spoken directions**, and that the speaker button on the map or Directions view isn't muted.
 
 **Play starts the wrong app**
 Hold the song title on Home, or use **Settings › Music**, to choose the music app.

@@ -20,6 +20,9 @@ object C {
     val good = Color(0xFF4CC38A)
     val track = Color(0xFF20252E)
 
+    /** CarDash's own red, the accent until the person picks another. */
+    val RED = Color(0xFFFF2D40)
+
     /** The accent. Called red because that's what it is unless changed; everything drawn with it follows a change. */
     var red by mutableStateOf(RED)
         private set
@@ -39,8 +42,6 @@ object C {
         redTint = tint(c)
         redLight = light(c)
     }
-
-    val RED = Color(0xFFFF2D40)
 
     private fun deep(c: Color) = lerp(panel, c, 0.31f)
     private fun tint(c: Color) = lerp(panel, c, 0.07f)
