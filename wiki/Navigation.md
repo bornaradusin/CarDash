@@ -9,6 +9,8 @@ Hold the middle box on Home, on any of its views, or tap **Where to?** on the ma
 - **Saved**: Home and Work. **Hold** any place (a result or a recent one) to save it as Home or Work.
 - **Recent**: the last places you drove to. Hold one to remove it.
 
+![Where to?](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/where-to.jpg)
+
 ### Eircodes and places the search doesn't know
 
 CarDash's search (the free OpenStreetMap search) doesn't know Eircodes. Type an Eircode, or anything it can't find, and CarDash offers **Directions in Google Maps**: Google Maps opens and starts the route. Come back to CarDash any time: the middle box shows Google's next turn.
@@ -16,6 +18,8 @@ CarDash's search (the free OpenStreetMap search) doesn't know Eircodes. Type an 
 ## On a route
 
 The middle box switches to the map, tilted and turning with the car, the route in the accent colour and an arrow at the next turn. On top: the next turn and how far. Underneath: when you'll arrive, the time left and the distance to go.
+
+![Home on a route, with the 3D map in the middle box](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/map.jpg)
 
 Swipe the middle box down to **Directions** for the next turn big, the one after it, and **End route**.
 
@@ -27,6 +31,8 @@ Swipe the middle box down to **Directions** for the next turn big, the one after
 
 With **Settings › Navigation › Big map on a route** on, the map takes the RPM dial's place while you're on a route and the map is showing. Above it, six small gauges instead of four: RPM and coolant join oil, boost, intake air and battery. Swipe the middle box to another view, or end the route, and Home goes back to normal.
 
+![The big map on a route](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/big-map.jpg)
+
 ## Google Maps
 
 Navigating in the Google Maps app instead? Its next turn, the distance to it and when you'll arrive show in the middle box's **Directions** view, with a button back to Google Maps. CarDash needs **Notification access** for this (Settings › Permissions).
@@ -34,6 +40,8 @@ Navigating in the Google Maps app instead? Its next turn, the distance to it and
 ## Offline map
 
 **Settings › Offline map** keeps map areas on the radio for driving without signal:
+
+![Settings: the offline map card](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/offline-map.jpg)
 
 - **Around here**: everything within 50 km (needs a GPS position).
 - **All of Ireland**: the whole island, down to street level. A big download.

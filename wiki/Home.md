@@ -1,5 +1,7 @@
 **CarDash** is a dashboard and home screen for Android car radios, with live engine data from a USB ELM327 OBD dongle. It's made for a 1280×720 UIS7862 radio in an Audi TT and laid out for that screen, but scales to any radio.
 
+![CarDash Home: RPM and speed dials, four small gauges, the middle box, music and app buttons](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/home.jpg)
+
 ## The pages
 
 Swipe left and right between four pages. The dots under the clock show where you are; tap a dot to jump to that page. The radio's Home button always brings you back to Home.

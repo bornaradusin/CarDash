@@ -1,5 +1,7 @@
 Open Settings from the gear, top right. The back arrow, or the radio's Home button, closes them.
 
+![Settings](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/settings.jpg)
+
 | Card | What's there |
 |---|---|
 | Accent colour | The colour of the needles, gauges, buttons and highlights. Type its **red, green and blue** (0–255 each) and it changes everywhere as you type, or tap a quick pick. **Back to red** puts it back |

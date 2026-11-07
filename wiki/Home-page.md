@@ -1,5 +1,7 @@
 The page CarDash opens on, and the one the radio's Home button brings you back to.
 
+![Home](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/home.jpg)
+
 ## Across the top
 
 - **Name**, top left: tap it to change it.
@@ -34,6 +36,8 @@ A figure the car doesn't report shows "–". See [Navigation](Navigation) for ro
 
 Over whatever view is on: the TT from above, with what's open in the accent colour, and what's open in words ("Right door open").
 
+![The right door open](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/door-open.jpg)
+
 ## Along the bottom
 
 - **Music**: what's playing, with previous, play/pause and next. Play starts your music app when nothing is playing. Hold the song title to choose which app that is.
@@ -43,6 +47,8 @@ Over whatever view is on: the TT from above, with what's open in the accent colo
 ## The speed warning
 
 Over the speed set in **Settings › Speed warning** (150 km/h unless you change it), **SLOW THE FUCK DOWN** comes up across the whole screen with your speed under it, and the red above and below pulses twice a second. It goes once you're 5 km/h under the set speed again. The music and app buttons still work while it's showing.
+
+![The speed warning](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/speed-warning.jpg)
 
 ## A service reminder
 
