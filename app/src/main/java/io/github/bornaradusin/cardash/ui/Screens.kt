@@ -325,13 +325,6 @@ private fun RpmDial(r: Readings, size: Dp) {
         bottomArc = true, bottomFill = r.coolantC?.let { (it - 40f) / 90f },
         modifier = Modifier.size(size),
     ) {
-        Column(Modifier.align(Alignment.TopCenter).padding(top = size * 0.55f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                r.rpm?.let { "%,d".format(Locale.US, it.toInt()) } ?: "–",
-                color = C.ink, fontSize = (size.value * 0.075f).sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
-            )
-            Text("rpm", color = C.muted, fontSize = (size.value * 0.033f).sp)
-        }
         Row(
             Modifier.align(Alignment.TopCenter).padding(top = size * 0.72f),
             verticalAlignment = Alignment.CenterVertically,
