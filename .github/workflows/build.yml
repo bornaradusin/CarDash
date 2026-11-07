@@ -4,8 +4,8 @@
 # changed: raise versionName for the next one.
 #
 # Optional repository secrets (Settings → Secrets and variables → Actions):
-#   ANDROID_KEYSTORE_BASE64    your signing key, base64, so each APK installs over the last
-#   ANDROID_KEYSTORE_PASSWORD  its password
+#   ANDROID_KEYSTORE_PASSWORD  opens signing/cardash.jks.enc (the signing key, encrypted with it),
+#                              so each APK installs over the last
 #   ANDROID_KEY_ALIAS          its alias (cardash if not set)
 #   ANDROID_KEY_PASSWORD       the key's password, if it differs from the keystore's
 name: Build
@@ -49,19 +49,17 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Signing key (if the ANDROID_KEYSTORE_BASE64 secret is set)
+      - name: Signing key (signing/cardash.jks.enc, opened with the ANDROID_KEYSTORE_PASSWORD secret)
         env:
-          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE" ]; then
-            # Spaces and line breaks picked up when the secret was pasted don't matter
-            printf '%s' "$KEYSTORE" | tr -d ' \t\r\n' | base64 -d > "$RUNNER_TEMP/cardash.jks" || true
-            if keytool -list -keystore "$RUNNER_TEMP/cardash.jks" -storepass "$PASSWORD" > /dev/null 2>&1; then
+          if [ -n "$PASSWORD" ] && [ -f signing/cardash.jks.enc ]; then
+            if openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in signing/cardash.jks.enc -out "$RUNNER_TEMP/cardash.jks" -pass env:PASSWORD \
+              && keytool -list -keystore "$RUNNER_TEMP/cardash.jks" -storepass "$PASSWORD" > /dev/null 2>&1; then
               echo "CARDASH_KEYSTORE=$RUNNER_TEMP/cardash.jks" >> "$GITHUB_ENV"
               echo "Signing key OK"
             else
-              echo "::error::ANDROID_KEYSTORE_BASE64 or ANDROID_KEYSTORE_PASSWORD doesn't open: the secret was cut short or the password is wrong."
+              echo "::error::ANDROID_KEYSTORE_PASSWORD doesn't open signing/cardash.jks.enc: check the secret has exactly the password, nothing else."
               exit 1
             fi
           fi
