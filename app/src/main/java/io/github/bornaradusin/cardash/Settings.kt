@@ -1,0 +1,42 @@
+package io.github.bornaradusin.cardash
+
+import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+/** What the person has chosen, kept on the radio. */
+class Settings(context: Context) {
+    private val sp = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+    private val _name = MutableStateFlow(sp.getString("name", null) ?: "CarDash")
+    /** Shown top left. */
+    val name: StateFlow<String> = _name
+
+    fun setName(v: String) {
+        val clean = v.trim().take(20).ifEmpty { "CarDash" }
+        sp.edit().putString("name", clean).apply()
+        _name.value = clean
+    }
+
+    private val _slots = MutableStateFlow((0 until SLOTS).map { sp.getString("slot$it", null) })
+    /** The package for each app button on Home; null = pick the usual app for that slot. */
+    val slots: StateFlow<List<String?>> = _slots
+
+    fun setSlot(i: Int, pkg: String) {
+        sp.edit().putString("slot$i", pkg).apply()
+        _slots.value = _slots.value.toMutableList().also { it[i] = pkg }
+    }
+
+    private val _fullScreen = MutableStateFlow(sp.getBoolean("fullScreen", true))
+    /** Hides the radio's own bars (a swipe from the edge brings them back). */
+    val fullScreen: StateFlow<Boolean> = _fullScreen
+
+    fun setFullScreen(v: Boolean) {
+        sp.edit().putBoolean("fullScreen", v).apply()
+        _fullScreen.value = v
+    }
+
+    companion object {
+        const val SLOTS = 4
+    }
+}
