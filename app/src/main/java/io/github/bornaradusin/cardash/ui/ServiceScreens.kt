@@ -199,7 +199,7 @@ private fun RemindCard(s: ServiceState, actions: DashActions) {
 }
 
 @Composable
-private fun Stepper(name: String, value: String, less: () -> Unit, more: () -> Unit) {
+internal fun Stepper(name: String, value: String, less: () -> Unit, more: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(name, color = C.ink, fontSize = 16.sp, modifier = Modifier.weight(1f))
         RoundIcon(Ic.minus, "Less", less)

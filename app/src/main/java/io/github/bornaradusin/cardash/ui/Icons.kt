@@ -54,6 +54,14 @@ object Ic {
     val minus = icon("minus", "M5 12h14")
     val back = icon("back", "M15 18l-6-6 6-6")
 
+    // Navigation
+    val search = icon("search", circle(10.5f, 10.5f, 6.5f), "M15.5 15.5L21 21")
+    val volume = icon("volume", "M4 9v6h4l5 4V5L8 9z", "M16.5 9.5a3.5 3.5 0 0 1 0 5", "M19 7a7 7 0 0 1 0 10")
+    val muted = icon("muted", "M4 9v6h4l5 4V5L8 9z", "M17 9.5l5 5", "M22 9.5l-5 5")
+    val work = icon("work", "M4 8h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z", "M9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2")
+    val clock = icon("clock", circle(12f, 12f, 9f), "M12 7v5l3 2")
+    val download = icon("download", "M12 4v10", "M8 10l4 4 4-4", "M5 19h14")
+
     // Service
     val wrench = icon("wrench", "M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z")
     val drop = icon("drop", "M12 3s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11z")

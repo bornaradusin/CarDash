@@ -2,7 +2,6 @@ package io.github.bornaradusin.cardash
 
 import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
@@ -15,18 +14,19 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.core.content.ContextCompat
+import androidx.compose.ui.graphics.Color
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.bornaradusin.cardash.car.Apps
 import io.github.bornaradusin.cardash.car.CarNotifications
 import io.github.bornaradusin.cardash.car.Media
-import io.github.bornaradusin.cardash.car.RadioFiles
 import io.github.bornaradusin.cardash.obd.ObdLink
 import io.github.bornaradusin.cardash.car.CanRole
 import io.github.bornaradusin.cardash.car.canValues
 import io.github.bornaradusin.cardash.car.effectivePicks
+import io.github.bornaradusin.cardash.nav.Places
+import io.github.bornaradusin.cardash.ui.C
 import io.github.bornaradusin.cardash.ui.CarDash
 import io.github.bornaradusin.cardash.ui.DashActions
 import io.github.bornaradusin.cardash.ui.DashState
@@ -42,7 +42,9 @@ class MainActivity : ComponentActivity() {
     /** Bumped on resume, so permissions and installed apps are checked again after a trip to Settings. */
     private var resumes by mutableIntStateOf(0)
     private var homePresses by mutableIntStateOf(0)
-    private var radioFiles by mutableStateOf<String?>(null)
+    /** Asked once per start, so the map doesn't keep asking after a no. */
+    private var askedLocation = false
+    private val locationRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { app.nav.start() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,7 +75,6 @@ class MainActivity : ComponentActivity() {
                 app.settings.setFullScreen(it)
                 applyFullScreen(it)
             },
-            saveRadioFiles = { saveRadioFiles() },
             matchFuel = idle@{ carSays ->
                 val now = app.obd.state.value.readings
                 val rpm = now.rpm
@@ -139,22 +140,69 @@ class MainActivity : ComponentActivity() {
             setRemindDays = { app.service.setDaysBefore(it) },
             setCarKm = { app.service.setCarKm(it) },
             serviceLater = { app.service.later() },
+            setSpeedWarnOn = { app.settings.setSpeedWarnOn(it) },
+            setSpeedWarnKmh = { app.settings.setSpeedWarnKmh(it) },
+            search = { q -> Places.search(q, app.nav.state.value.here) },
+            preview = { p -> app.nav.preview(p.pos) },
+            go = { p, route ->
+                app.places.used(p)
+                app.nav.go(p, route)
+            },
+            endRoute = { app.nav.end() },
+            toggleMute = { app.nav.toggleMute() },
+            setHome = { app.places.setHome(it) },
+            setWork = { app.places.setWork(it) },
+            forgetRecent = { app.places.forget(it) },
+            askLocation = { askLocation(force = false) },
+            allowLocation = { askLocation(force = true) },
+            setSpoken = { app.settings.setSpoken(it) },
+            setBigMap = { app.settings.setBigMap(it) },
+            setAccent = { argb ->
+                app.settings.setAccent(argb)
+                C.setAccent(Color(app.settings.accent.value))
+            },
+            saveMapAround = { app.nav.state.value.here?.let { app.offlineMaps.saveAround(it, 50.0, "Around here, 50 km") } },
+            saveMapIreland = { app.offlineMaps.saveIreland() },
+            saveMapRoute = {
+                val n = app.nav.state.value
+                n.route?.let { app.offlineMaps.saveAlong(it, "Route to ${n.destination?.name ?: "destination"}") }
+            },
+            pauseMap = { app.offlineMaps.pause(it) },
+            resumeMap = { app.offlineMaps.resume(it) },
+            updateMap = { app.offlineMaps.update(it) },
+            removeMap = { app.offlineMaps.remove(it) },
+            setWifiOnly = {
+                app.settings.setWifiOnly(it)
+                app.offlineMaps.applyNetwork()
+            },
         )
+        C.setAccent(Color(app.settings.accent.value))
+        app.offlineMaps.start()
 
         setContent {
             val obd by app.obd.state.collectAsState()
-            val nav by CarNotifications.nav.collectAsState()
+            val google by CarNotifications.nav.collectAsState()
+            val nav by app.nav.state.collectAsState()
             val now by media.now.collectAsState()
             val name by app.settings.name.collectAsState()
             val slots by app.settings.slots.collectAsState()
             val fullScreen by app.settings.fullScreen.collectAsState()
             val icons by app.settings.icons.collectAsState()
-            val lastWaze by CarNotifications.lastWaze.collectAsState()
             val musicApp by app.settings.musicApp.collectAsState()
             val diesel by app.settings.diesel.collectAsState()
             val can by app.can.state.collectAsState()
             val canPicks by app.settings.canPicks.collectAsState()
             val service by app.service.state.collectAsState()
+            val speedWarnOn by app.settings.speedWarnOn.collectAsState()
+            val speedWarnKmh by app.settings.speedWarnKmh.collectAsState()
+            val accent by app.settings.accent.collectAsState()
+            val spoken by app.settings.spoken.collectAsState()
+            val bigMap by app.settings.bigMap.collectAsState()
+            val wifiOnly by app.settings.wifiOnly.collectAsState()
+            val home by app.places.home.collectAsState()
+            val work by app.places.work.collectAsState()
+            val recent by app.places.recent.collectAsState()
+            val mapAreas by app.offlineMaps.areas.collectAsState()
             val usedPicks = remember(can, canPicks) { effectivePicks(can.values, canPicks) }
             val fromCan = remember(can, usedPicks) { canValues(can.values, usedPicks) }
             // The CAN box's values go where the dashboard shows them; OBD fills in the rest
@@ -174,21 +222,30 @@ class MainActivity : ComponentActivity() {
                 name = name,
                 obd = merged,
                 nav = nav,
+                google = google,
                 now = now,
                 apps = apps,
                 slots = slots,
                 icons = icons,
-                lastWaze = lastWaze,
                 musicApp = musicApp,
                 hasNotifications = remember(resumes) { CarNotifications.allowed(this@MainActivity) },
                 fullScreen = fullScreen,
                 homePresses = homePresses,
                 diesel = diesel,
-                radioFiles = radioFiles,
                 can = can,
                 canPicks = usedPicks,
                 canValues = fromCan,
                 service = service,
+                speedWarnOn = speedWarnOn,
+                speedWarnKmh = speedWarnKmh,
+                accent = accent,
+                spoken = spoken,
+                bigMap = bigMap,
+                wifiOnly = wifiOnly,
+                home = home,
+                work = work,
+                recent = recent,
+                mapAreas = mapAreas,
             )
             Scaled { CarDash(state, actions) }
         }
@@ -202,6 +259,26 @@ class MainActivity : ComponentActivity() {
         media.preferred = musicApp()
         media.start()
         applyFullScreen(app.settings.fullScreen.value)
+        // The GPS, if location is allowed (asked for the first time the map or Where to? opens)
+        app.nav.start()
+    }
+
+    /** Asks for location for the map and directions; [force] asks again even after a no this time. */
+    private fun askLocation(force: Boolean) {
+        if (app.nav.hasPermission()) {
+            app.nav.start()
+            return
+        }
+        if (askedLocation && !force) return
+        // Said no for good: Android won't ask again, so open CarDash's page in Android's settings
+        if (askedLocation && force && !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            runCatching {
+                startActivity(Intent(AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", packageName, null)))
+            }
+            return
+        }
+        askedLocation = true
+        locationRequest.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
     override fun onDestroy() {
@@ -226,23 +303,6 @@ class MainActivity : ComponentActivity() {
         val installed = Apps.all(this)
         val chosen = app.settings.musicApp.value?.takeIf { pkg -> installed.any { it.pkg == pkg } }
         return chosen ?: Apps.defaultFor(2, installed)?.pkg
-    }
-
-    private fun saveRadioFiles() {
-        if (radioFiles?.startsWith("Saving") == true) return
-        radioFiles = "Saving…"
-        Thread {
-            val result = runCatching { RadioFiles.save(this) { msg -> runOnUiThread { radioFiles = msg } } }
-            runOnUiThread {
-                radioFiles = result.fold(
-                    onSuccess = { r ->
-                        "Saved ${r.files} files (${r.bytes / 1_048_576} MB) to Download/CarDash. Copy that folder to a USB stick and send the files." +
-                            if (r.skipped.isEmpty()) "" else " Not copied: " + r.skipped.joinToString(", ")
-                    },
-                    onFailure = { "Couldn't save the files: ${it.message}" },
-                )
-            }
-        }.start()
     }
 
     private fun applyFullScreen(on: Boolean) {

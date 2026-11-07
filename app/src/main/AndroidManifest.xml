@@ -9,12 +9,26 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- The map, the place search and the route planner are online services -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Saved map areas can wait for Wi-Fi -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The radio's GPS: the car on the map, and directions -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
     <!-- Uninstall from the app list (Android still asks first) -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
-    <!-- The radio's CAN service (oil temperature, odometer) -->
+    <!-- The radio's CAN service (oil temperature, odometer), Google Maps for directions it can't find,
+         and the radio's voice for spoken directions -->
     <queries>
         <package android:name="com.syu.ms" />
+        <package android:name="com.google.android.apps.maps" />
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <application
@@ -52,7 +66,7 @@
                 android:resource="@xml/usb_devices" />
         </activity>
 
-        <!-- Reads Waze's next turn from its notification, and finds what's playing -->
+        <!-- Reads Google Maps' next turn from its notification, and finds what's playing -->
         <service
             android:name=".car.CarNotifications"
             android:exported="true"

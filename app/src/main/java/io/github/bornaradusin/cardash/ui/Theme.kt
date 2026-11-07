@@ -1,8 +1,12 @@
 package io.github.bornaradusin.cardash.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 
-/** CarDash's colours: near-black, steel greys and one red. */
+/** CarDash's colours: near-black, steel greys and one accent (red unless the person picks another). */
 object C {
     val bg = Color(0xFF07080B)
     val bgLift = Color(0xFF161A22)
@@ -13,9 +17,32 @@ object C {
     val ink = Color(0xFFEEF2F7)
     val ink2 = Color(0xFFC9D2DD)
     val muted = Color(0xFF9AA3B2)
-    val red = Color(0xFFFF2D40)
-    val redDeep = Color(0xFF5A1B24)
-    val redTint = Color(0xFF1E1013)
     val good = Color(0xFF4CC38A)
     val track = Color(0xFF20252E)
+
+    /** The accent. Called red because that's what it is unless changed; everything drawn with it follows a change. */
+    var red by mutableStateOf(RED)
+        private set
+    /** The accent darkened into the panels: borders of things that need attention. */
+    var redDeep by mutableStateOf(deep(RED))
+        private set
+    /** The accent barely there: backgrounds behind an accent icon. */
+    var redTint by mutableStateOf(tint(RED))
+        private set
+    /** The accent lightened: a gauge past its warning level. */
+    var redLight by mutableStateOf(light(RED))
+        private set
+
+    fun setAccent(c: Color) {
+        red = c
+        redDeep = deep(c)
+        redTint = tint(c)
+        redLight = light(c)
+    }
+
+    val RED = Color(0xFFFF2D40)
+
+    private fun deep(c: Color) = lerp(panel, c, 0.31f)
+    private fun tint(c: Color) = lerp(panel, c, 0.07f)
+    private fun light(c: Color) = lerp(c, Color.White, 0.3f)
 }

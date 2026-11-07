@@ -5,6 +5,9 @@ import io.github.bornaradusin.cardash.car.CanRole
 import io.github.bornaradusin.cardash.car.ServiceBook
 import io.github.bornaradusin.cardash.car.canValues
 import io.github.bornaradusin.cardash.car.effectivePicks
+import io.github.bornaradusin.cardash.nav.Navigator
+import io.github.bornaradusin.cardash.nav.OfflineMaps
+import io.github.bornaradusin.cardash.nav.Places
 import io.github.bornaradusin.cardash.obd.Link
 import io.github.bornaradusin.cardash.obd.ObdLink
 import kotlinx.coroutines.CoroutineScope
@@ -14,6 +17,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import org.maplibre.android.MapLibre
 
 class CarDashApp : Application() {
 
@@ -28,10 +32,21 @@ class CarDashApp : Application() {
     /** What needs servicing, counted down from the car's odometer. */
     val service: ServiceBook by lazy { ServiceBook(this, settings.diesel.value) }
 
+    /** CarDash's own navigation: GPS, routes, directions. */
+    val nav: Navigator by lazy { Navigator(this) { settings.spoken.value } }
+
+    /** Home, Work and recent places. */
+    val places: Places by lazy { Places(this) }
+
+    /** Map areas saved for driving without signal. */
+    val offlineMaps: OfflineMaps by lazy { OfflineMaps(this) { settings.wifiOnly.value } }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
+        // The map library, once for the whole app
+        MapLibre.getInstance(this)
         obd.fuelFactor = settings.fuelFactor.value
         obd.diesel = settings.diesel.value
         obd.dieselQ0 = settings.dieselQ0

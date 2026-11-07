@@ -57,7 +57,7 @@ object Apps {
         0 -> installed.firstOrNull { a ->
             listOf("android auto", "carplay", "zlink", "carlink", "autokit", "tlink", "easyconnection").any { it in a.label.lowercase() }
         } ?: installed.firstOrNull { it.pkg == "com.google.android.projection.gearhead" }
-        1 -> installed.firstOrNull { it.pkg == CarNotifications.WAZE }
+        1 -> installed.firstOrNull { it.pkg == "com.waze" }
         2 -> installed.firstOrNull { it.pkg == "com.google.android.apps.youtube.music" }
         3 -> installed.firstOrNull { it.pkg == "com.google.android.youtube" }
         else -> null

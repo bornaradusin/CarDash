@@ -93,7 +93,67 @@ class Settings(context: Context) {
         _fullScreen.value = v
     }
 
+    private val _speedWarnOn = MutableStateFlow(sp.getBoolean("speedWarnOn", true))
+    /** "Slow down" across the whole screen when over [speedWarnKmh]. */
+    val speedWarnOn: StateFlow<Boolean> = _speedWarnOn
+
+    fun setSpeedWarnOn(v: Boolean) {
+        sp.edit().putBoolean("speedWarnOn", v).apply()
+        _speedWarnOn.value = v
+    }
+
+    private val _speedWarnKmh = MutableStateFlow(sp.getInt("speedWarnKmh", SPEED_WARN_DEFAULT))
+    val speedWarnKmh: StateFlow<Int> = _speedWarnKmh
+
+    fun setSpeedWarnKmh(v: Int) {
+        val k = (v / SPEED_WARN_STEP * SPEED_WARN_STEP).coerceIn(SPEED_WARN_MIN, SPEED_WARN_MAX)
+        sp.edit().putInt("speedWarnKmh", k).apply()
+        _speedWarnKmh.value = k
+    }
+
+    private val _accent = MutableStateFlow(sp.getInt("accent", DEFAULT_ACCENT))
+    /** The accent colour, as ARGB: red unless the person picks another. */
+    val accent: StateFlow<Int> = _accent
+
+    fun setAccent(argb: Int) {
+        val c = argb or 0xFF000000.toInt()
+        sp.edit().putInt("accent", c).apply()
+        _accent.value = c
+    }
+
+    private val _spoken = MutableStateFlow(sp.getBoolean("spokenDirections", true))
+    /** Directions read out ("In 300 metres, turn right"); the mute button on Home silences them for a while. */
+    val spoken: StateFlow<Boolean> = _spoken
+
+    fun setSpoken(v: Boolean) {
+        sp.edit().putBoolean("spokenDirections", v).apply()
+        _spoken.value = v
+    }
+
+    private val _bigMap = MutableStateFlow(sp.getBoolean("bigMap", true))
+    /** On a route, with the map showing, the map takes the RPM dial's place. */
+    val bigMap: StateFlow<Boolean> = _bigMap
+
+    fun setBigMap(v: Boolean) {
+        sp.edit().putBoolean("bigMap", v).apply()
+        _bigMap.value = v
+    }
+
+    private val _wifiOnly = MutableStateFlow(sp.getBoolean("mapWifiOnly", true))
+    /** Saved map areas download only on Wi-Fi. */
+    val wifiOnly: StateFlow<Boolean> = _wifiOnly
+
+    fun setWifiOnly(v: Boolean) {
+        sp.edit().putBoolean("mapWifiOnly", v).apply()
+        _wifiOnly.value = v
+    }
+
     companion object {
+        val DEFAULT_ACCENT = 0xFFFF2D40.toInt()
+        const val SPEED_WARN_DEFAULT = 150
+        const val SPEED_WARN_MIN = 50
+        const val SPEED_WARN_MAX = 250
+        const val SPEED_WARN_STEP = 10
         const val SLOTS = 4
         val DEFAULT_ICONS = listOf("android_auto", "waze", "music", "video")
     }

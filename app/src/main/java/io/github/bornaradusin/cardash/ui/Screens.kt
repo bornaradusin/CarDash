@@ -1,5 +1,10 @@
 package io.github.bornaradusin.cardash.ui
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -7,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,6 +32,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -55,25 +63,36 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import io.github.bornaradusin.cardash.R
+import io.github.bornaradusin.cardash.Settings
 import io.github.bornaradusin.cardash.car.AppEntry
 import io.github.bornaradusin.cardash.car.Apps
 import io.github.bornaradusin.cardash.car.CanPick
@@ -81,32 +100,36 @@ import io.github.bornaradusin.cardash.car.CanRole
 import io.github.bornaradusin.cardash.car.CanScale
 import io.github.bornaradusin.cardash.car.CanState
 import io.github.bornaradusin.cardash.car.CanValue
-import io.github.bornaradusin.cardash.car.CarNotifications
 import io.github.bornaradusin.cardash.car.Doors
 import io.github.bornaradusin.cardash.car.NavInfo
 import io.github.bornaradusin.cardash.car.NowPlaying
 import io.github.bornaradusin.cardash.car.ServiceItem
 import io.github.bornaradusin.cardash.car.ServiceState
+import io.github.bornaradusin.cardash.nav.MapArea
+import io.github.bornaradusin.cardash.nav.NavState
+import io.github.bornaradusin.cardash.nav.Place
+import io.github.bornaradusin.cardash.nav.Route
 import io.github.bornaradusin.cardash.obd.Link
 import io.github.bornaradusin.cardash.obd.ObdState
 import io.github.bornaradusin.cardash.obd.Readings
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Everything the screens show, gathered by MainActivity. */
 data class DashState(
     val name: String,
     val obd: ObdState,
-    val nav: NavInfo?,
+    /** CarDash's own navigation: where the car is, and the route if there is one. */
+    val nav: NavState,
+    /** Google Maps' next turn while it navigates. */
+    val google: NavInfo?,
     val now: NowPlaying?,
     val apps: List<AppEntry>,
     val slots: List<String?>,
     val icons: List<String>,
-    /** Waze's last notification, word for word, for Settings. */
-    val lastWaze: String?,
     /** The chosen music player; null = YouTube Music. */
     val musicApp: String?,
     val hasNotifications: Boolean,
@@ -115,14 +138,24 @@ data class DashState(
     val homePresses: Int,
     /** The engine runs on diesel: fuel use is worked out from load and RPM, not air flow. */
     val diesel: Boolean,
-    /** What Save radio files last said. */
-    val radioFiles: String?,
     val can: CanState,
     val canPicks: Map<CanRole, CanPick>,
     /** The CAN box values the person has assigned, ready to show. */
     val canValues: Map<CanRole, Float>,
     /** What needs servicing, and the car's odometer it counts down from. */
     val service: ServiceState,
+    /** "Slow down" across the screen over this speed, when on. */
+    val speedWarnOn: Boolean,
+    val speedWarnKmh: Int,
+    /** The accent colour, ARGB. */
+    val accent: Int,
+    val spoken: Boolean,
+    val bigMap: Boolean,
+    val wifiOnly: Boolean,
+    val home: Place?,
+    val work: Place?,
+    val recent: List<Place>,
+    val mapAreas: List<MapArea>,
 )
 
 /** What the screens can ask for. */
@@ -140,7 +173,6 @@ class DashActions(
     val chooseHome: () -> Unit,
     val setName: (String) -> Unit,
     val setFullScreen: (Boolean) -> Unit,
-    val saveRadioFiles: () -> Unit,
     /** Matches fuel use to the car: what the car says it's using right now, in L/h. */
     val matchFuel: (Float) -> Unit,
     val resetFuel: () -> Unit,
@@ -161,6 +193,34 @@ class DashActions(
     val setCarKm: (Double) -> Unit,
     /** Hides the service reminder until the next drive. */
     val serviceLater: () -> Unit,
+    val setSpeedWarnOn: (Boolean) -> Unit,
+    val setSpeedWarnKmh: (Int) -> Unit,
+    // Navigation
+    val search: suspend (String) -> List<Place>,
+    val preview: suspend (Place) -> Route?,
+    val go: (Place, Route?) -> Unit,
+    val endRoute: () -> Unit,
+    val toggleMute: () -> Unit,
+    val setHome: (Place) -> Unit,
+    val setWork: (Place) -> Unit,
+    val forgetRecent: (Place) -> Unit,
+    /** Asks for location the first time it's needed (once per start). */
+    val askLocation: () -> Unit,
+    /** The Allow buttons: asks again, or opens Android's settings for CarDash after a no for good. */
+    val allowLocation: () -> Unit,
+    val setSpoken: (Boolean) -> Unit,
+    val setBigMap: (Boolean) -> Unit,
+    // The look
+    val setAccent: (Int) -> Unit,
+    // Offline map
+    val saveMapAround: () -> Unit,
+    val saveMapIreland: () -> Unit,
+    val saveMapRoute: () -> Unit,
+    val pauseMap: (Long) -> Unit,
+    val resumeMap: (Long) -> Unit,
+    val updateMap: (Long) -> Unit,
+    val removeMap: (Long) -> Unit,
+    val setWifiOnly: (Boolean) -> Unit,
 )
 
 /**
@@ -192,18 +252,34 @@ private const val PAGE_GAUGES = 2
 private const val PAGE_SERVICE = 3
 private const val PAGES = 4
 
+/** What the middle box on Home shows, swiped up and down. */
+internal const val VIEW_CAR = 0
+internal const val VIEW_DIRECTIONS = 1
+internal const val VIEW_MAP = 2
+private const val VIEWS = 3
+
 /** Four pages to swipe between (all apps, Home, gauges, service), and Settings from the gear. */
 @Composable
 fun CarDash(state: DashState, actions: DashActions) {
     val pager = rememberPagerState(initialPage = PAGE_HOME) { PAGES }
+    /** The middle box's view, kept here so it survives the big map taking over and Where to? starting a route. */
+    val centre = rememberPagerState(initialPage = VIEW_CAR) { VIEWS }
     val scope = rememberCoroutineScope()
     var settings by remember { mutableStateOf(false) }
+    var whereTo by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.homePresses) {
         settings = false
+        whereTo = false
         if (pager.currentPage != PAGE_HOME) pager.animateScrollToPage(PAGE_HOME)
     }
+    // A route starts: show the map
+    val routing = state.nav.destination != null
+    LaunchedEffect(routing) {
+        if (routing && centre.currentPage == VIEW_CAR) centre.animateScrollToPage(VIEW_MAP)
+    }
+    val openSearch = { settings = false; whereTo = true }
 
     Column(
         Modifier
@@ -212,22 +288,25 @@ fun CarDash(state: DashState, actions: DashActions) {
     ) {
         Header(
             state,
-            page = if (settings) null else pager.currentPage,
-            onPage = { scope.launch { settings = false; pager.animateScrollToPage(it) } },
+            page = if (settings || whereTo) null else pager.currentPage,
+            onPage = { scope.launch { settings = false; whereTo = false; pager.animateScrollToPage(it) } },
             onName = { naming = true },
-            onSettings = { settings = !settings },
-            onService = { scope.launch { settings = false; pager.animateScrollToPage(PAGE_SERVICE) } },
+            onSettings = { whereTo = false; settings = !settings },
+            onService = { scope.launch { settings = false; whereTo = false; pager.animateScrollToPage(PAGE_SERVICE) } },
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (settings) {
-                SettingsScreen(state, actions) { settings = false }
-            } else {
-                HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+            when {
+                settings -> SettingsScreen(state, actions) { settings = false }
+                whereTo -> WhereToScreen(state, actions) {
+                    whereTo = false
+                    scope.launch { if (pager.currentPage != PAGE_HOME) pager.scrollToPage(PAGE_HOME) }
+                }
+                else -> HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
                     when (page) {
                         PAGE_APPS -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
                             AppsScreen(state.apps, actions)
                         }
-                        PAGE_HOME -> Home(state, actions) { scope.launch { pager.animateScrollToPage(PAGE_APPS) } }
+                        PAGE_HOME -> Home(state, actions, centre, openSearch) { scope.launch { pager.animateScrollToPage(PAGE_APPS) } }
                         PAGE_SERVICE -> ServicePage(state.service, actions)
                         else -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
                             Gauges(state.obd, state.canValues, actions)
@@ -239,8 +318,68 @@ fun CarDash(state: DashState, actions: DashActions) {
     }
     if (naming) NameDialog(state.name, onSave = { actions.setName(it); naming = false }, onDismiss = { naming = false })
     // Something due: a reminder, except on the Service page itself and in Settings
-    if (!settings && pager.currentPage != PAGE_SERVICE) {
+    if (!settings && !whereTo && pager.currentPage != PAGE_SERVICE) {
         ServiceReminder(state.service, actions) { scope.launch { pager.animateScrollToPage(PAGE_SERVICE) } }
+    }
+    // Too fast: across the whole screen, over everything
+    if (state.speedWarnOn) SpeedWarning(state.obd.readings.speedKmh, state.speedWarnKmh)
+}
+
+/**
+ * "SLOW THE FUCK DOWN" over the whole screen while over the set speed.
+ * It goes once the speed is 5 km/h under again, so it doesn't flicker on and off at the line.
+ * Touches go through it, so the music and app buttons still work.
+ */
+@Composable
+private fun SpeedWarning(speedKmh: Float?, overKmh: Int) {
+    // Remembers whether it's showing, between the over and under lines (not state: it only changes with the speed)
+    val showing = remember { booleanArrayOf(false) }
+    val v = speedKmh
+    showing[0] = when {
+        v == null -> false
+        v > overKmh -> true
+        v < overKmh - 5 -> false
+        else -> showing[0]
+    }
+    if (!showing[0]) return
+    // The red above and below the band pulses twice a second for as long as it's showing
+    val flash by rememberInfiniteTransition(label = "slow down").animateFloat(
+        initialValue = 0.35f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(250), RepeatMode.Reverse),
+        label = "flash",
+    )
+    Box(Modifier.size(1280.dp, 720.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.matchParentSize().graphicsLayer { alpha = flash }.background(C.red.copy(alpha = 0.34f)).border(6.dp, C.red))
+        Column(
+            Modifier.fillMaxWidth().height(278.dp),
+        ) {
+            Box(Modifier.fillMaxWidth().height(3.dp).graphicsLayer { alpha = flash }.background(C.red))
+            Column(
+                Modifier.fillMaxWidth().weight(1f).background(Color(0xE6080305)),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+            ) {
+                Text(
+                    "SLOW THE FUCK DOWN", color = C.red, fontSize = 96.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
+                    letterSpacing = 2.sp, maxLines = 1,
+                    style = TextStyle(shadow = Shadow(C.red.copy(alpha = 0.6f), blurRadius = 28f)),
+                )
+                // The speed dead centre, km/h hanging off its right
+                Box {
+                    Text(v?.toInt()?.toString() ?: "–", color = C.ink, fontSize = 88.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+                    Text(
+                        "\u00A0km/h", color = C.muted, fontSize = 26.sp, maxLines = 1, softWrap = false,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 22.dp)
+                            .layout { m, c ->
+                                // takes no width, so the number stays centred
+                                val p = m.measure(c.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                                layout(0, p.height) { p.place(0, 0) }
+                            },
+                    )
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(3.dp).graphicsLayer { alpha = flash }.background(C.red))
+        }
     }
 }
 
@@ -265,22 +404,21 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
                 Text(" //", color = C.red, fontSize = 24.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
             }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Time, date and the page dots side by side
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(now.format(DateTimeFormatter.ofPattern("HH:mm")), color = C.ink, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(now.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())), color = C.muted, fontSize = 13.sp)
-                if (page != null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        repeat(PAGES) { i ->
-                            Box(
-                                Modifier
-                                    .height(6.dp)
-                                    .width(if (i == page) 16.dp else 6.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(if (i == page) C.red else C.lineHi)
-                                    .clickable { onPage(i) },
-                            )
-                        }
+            Text(now.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())), color = C.muted, fontSize = 18.sp)
+            if (page != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    repeat(PAGES) { i ->
+                        Box(
+                            Modifier
+                                .height(6.dp)
+                                .width(if (i == page) 16.dp else 6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(if (i == page) C.red else C.lineHi)
+                                .clickable { onPage(i) },
+                        )
                     }
                 }
             }
@@ -328,30 +466,41 @@ private fun NameDialog(name: String, onSave: (String) -> Unit, onDismiss: () -> 
 // ---------- home ----------
 
 @Composable
-private fun Home(state: DashState, actions: DashActions, allApps: () -> Unit) {
+private fun Home(state: DashState, actions: DashActions, centre: PagerState, openSearch: () -> Unit, allApps: () -> Unit) {
     val r = state.obd.readings
+    val doors = remember(state.can) { Doors.from(state.can.values) }
+    // On a route with the map showing, the map can take the RPM dial's place (Settings)
+    val big = state.bigMap && state.nav.route != null && centre.currentPage == VIEW_MAP && !doors.anyOpen
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
+            // The dials and the box all end the same distance above the bottom bar
             Row(
-                Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                RpmDial(r, DIAL)
+                if (!big) RpmDial(r, DIAL)
                 // The box runs from just under the small gauges to just above the bottom bar
-                Box(Modifier.weight(1f).fillMaxHeight().padding(top = GAUGE_TOP + GAUGE + 10.dp, bottom = 10.dp)) {
-                    CenterPanel(state, actions, Modifier.fillMaxSize())
+                Box(Modifier.weight(1f).fillMaxHeight().padding(top = GAUGE_TOP + GAUGE + 10.dp)) {
+                    CenterPanel(state, actions, doors, centre, openSearch, wide = big, modifier = Modifier.fillMaxSize())
                 }
                 SpeedDial(r, state.obd.trip.meters, DIAL)
             }
-            // The small gauges sit high, in the gap above the dials, just under the divider
-            Row(Modifier.align(Alignment.TopCenter).padding(top = GAUGE_TOP), horizontalArrangement = Arrangement.spacedBy(GAUGE_GAP)) {
-                // Oil once the radio's CAN box is read; until then, engine load
-                if (r.oilC != null) RoundGauge(Ic.oil, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 130f, diameter = GAUGE)
-                else RoundGauge(Ic.gauge, "Engine load", r.loadPct, 0f, 100f, r.loadPct?.let { "${it.toInt()}" }, "%", diameter = GAUGE)
-                RoundGauge(Ic.boost, "Boost", r.boostBar, 0f, 1.5f, r.boostBar?.let { fmt(it, 1) }, "bar", diameter = GAUGE)
-                RoundGauge(Ic.air, "Intake air", r.intakeC, 0f, 70f, r.intakeC?.let { "${it.toInt()}" }, "°C", warnAbove = 55f, diameter = GAUGE)
-                RoundGauge(Ic.battery, "Battery", r.volts, 11f, 15f, r.volts?.let { fmt(it, 1) }, "V", warnBelow = 11.8f, diameter = GAUGE)
+            if (big) {
+                // Over the big map: more small gauges rather than wider ones, RPM and coolant among them
+                Row(
+                    Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = GAUGE_TOP).width(1280.dp - DIAL - 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(GAUGE_GAP, Alignment.CenterHorizontally),
+                ) {
+                    RoundGauge(Ic.gauge, "RPM", r.rpm, 0f, 6000f, r.rpm?.let { "${it.toInt()}" }, "rpm", warnAbove = 4500f, diameter = GAUGE)
+                    RoundGauge(Ic.coolant, "Coolant", r.coolantC, 40f, 140f, r.coolantC?.let { "${it.toInt()}" }, "°C", warnAbove = 110f, diameter = GAUGE)
+                    SmallGauges(r)
+                }
+            } else {
+                // The small gauges sit high, in the gap above the dials, just under the divider
+                Row(Modifier.align(Alignment.TopCenter).padding(top = GAUGE_TOP), horizontalArrangement = Arrangement.spacedBy(GAUGE_GAP)) {
+                    SmallGauges(r)
+                }
             }
         }
         BottomBar(state, actions, allApps)
@@ -359,9 +508,19 @@ private fun Home(state: DashState, actions: DashActions, allApps: () -> Unit) {
 }
 
 @Composable
+private fun SmallGauges(r: Readings) {
+    // Oil once the radio's CAN box is read; until then, engine load
+    if (r.oilC != null) RoundGauge(Ic.oil, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 130f, diameter = GAUGE)
+    else RoundGauge(Ic.gauge, "Engine load", r.loadPct, 0f, 100f, r.loadPct?.let { "${it.toInt()}" }, "%", diameter = GAUGE)
+    RoundGauge(Ic.boost, "Boost", r.boostBar, 0f, 1.5f, r.boostBar?.let { fmt(it, 1) }, "bar", diameter = GAUGE)
+    RoundGauge(Ic.air, "Intake air", r.intakeC, 0f, 70f, r.intakeC?.let { "${it.toInt()}" }, "°C", warnAbove = 55f, diameter = GAUGE)
+    RoundGauge(Ic.battery, "Battery", r.volts, 11f, 15f, r.volts?.let { fmt(it, 1) }, "V", warnBelow = 11.8f, diameter = GAUGE)
+}
+
+@Composable
 private fun RpmDial(r: Readings, size: Dp) {
     Dial(
-        value = r.rpm, max = 6000f, major = 1000f, minor = 500f, redFrom = 4500f,
+        value = r.rpm, max = 6000f, major = 1000f, minor = 250f, mid = 500f, redFrom = 4500f,
         label = { (it / 1000).toInt().toString() }, labelSize = 0.094f,
         bottomArc = true, bottomFill = r.coolantC?.let { (it - 40f) / 100f },
         modifier = Modifier.size(size),
@@ -380,7 +539,7 @@ private fun RpmDial(r: Readings, size: Dp) {
 @Composable
 private fun SpeedDial(r: Readings, tripMeters: Double, size: Dp) {
     Dial(
-        value = r.speedKmh, max = 280f, major = 20f, minor = 10f, labelSize = 0.068f, labelEvery = 40f,
+        value = r.speedKmh, max = 280f, major = 20f, minor = 10f, labelSize = 0.068f, labelEvery = 40f, smallLabelEvery = 20f,
         modifier = Modifier.size(size),
     ) {
         Box(
@@ -433,12 +592,13 @@ private fun RoundGauge(
             drawCircle(C.lineHi, size.minDimension / 2 - 1.dp.toPx() * k, style = Stroke(1.5.dp.toPx() * k))
             drawArc(C.track, 135f, 270f, false, tl, sz, style = Stroke(stroke, cap = StrokeCap.Round))
             if (value != null && frac > 0.005f) {
-                val col = if (warn) Color(0xFFFF6B7A) else C.red
+                val col = if (warn) C.redLight else C.red
                 drawArc(col.copy(alpha = 0.25f), 135f, 270f * frac, false, tl, sz, style = Stroke(stroke * 2.6f, cap = StrokeCap.Round))
                 drawArc(col, 135f, 270f * frac, false, tl, sz, style = Stroke(stroke, cap = StrokeCap.Round))
             }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // A little above the middle, clear of the gap at the bottom of the ring
+        Column(Modifier.padding(bottom = 8.dp * k), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, name, tint = if (warn) C.red else C.ink2, modifier = Modifier.size(18.dp * k))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(text ?: "–", color = C.ink, fontSize = (17 * k).sp, fontWeight = FontWeight.SemiBold)
@@ -448,163 +608,118 @@ private fun RoundGauge(
     }
 }
 
-// ---------- centre: Waze's next turn, or the drive ----------
+// ---------- centre: the car, directions, the map; doors on top ----------
 
 @Composable
-private fun CenterPanel(state: DashState, actions: DashActions, modifier: Modifier) {
-    val nav = state.nav
-    // Something open beats everything else, then Waze's next turn, then the drive
-    val doors = remember(state.can) { Doors.from(state.can.values) }
+private fun CenterPanel(
+    state: DashState,
+    actions: DashActions,
+    doors: Doors,
+    centre: PagerState,
+    openSearch: () -> Unit,
+    wide: Boolean,
+    modifier: Modifier,
+) {
+    val alert = doors.anyOpen || state.nav.route != null || state.google != null
     Box(
         modifier
             .clip(RoundedCornerShape(22.dp))
             .background(C.panel)
-            .border(1.dp, if (nav != null || doors.anyOpen) C.redDeep else C.line, RoundedCornerShape(22.dp))
-            .padding(12.dp),
+            .border(1.dp, if (alert) C.redDeep else C.line, RoundedCornerShape(22.dp))
+            // Hold, on any view, for Where to?
+            .pointerInput(Unit) { detectTapGestures(onLongPress = { openSearch() }) },
     ) {
         if (doors.anyOpen) {
-            DoorsPanel(doors)
-        } else if (nav != null) {
-            NavPanel(nav)
-            Box(
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .height(40.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(C.panelHi)
-                    .border(1.dp, C.lineHi, RoundedCornerShape(20.dp))
-                    .clickable { actions.launch(CarNotifications.WAZE) }
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Ic.waze, null, tint = C.ink, modifier = Modifier.size(18.dp))
-                    Text("Waze", color = C.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Box(Modifier.fillMaxSize().padding(12.dp)) { DoorsPanel(doors) }
+        } else {
+            VerticalPager(centre, Modifier.fillMaxSize()) { view ->
+                when (view) {
+                    VIEW_CAR -> Box(Modifier.fillMaxSize().padding(12.dp)) { DrivePanel(state.obd, state.canValues[CanRole.RANGE]) }
+                    VIEW_DIRECTIONS -> Box(Modifier.fillMaxSize().padding(12.dp)) { DirectionsPanel(state, actions, openSearch) }
+                    else -> Box(Modifier.fillMaxSize().padding(6.dp)) { MapPanel(state, actions, openSearch, wide) }
                 }
             }
-        } else {
-            DrivePanel(state.obd, state.canValues[CanRole.RANGE])
+            // Which view is on: dots down the right edge
+            Column(
+                Modifier.align(Alignment.CenterEnd).padding(end = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                repeat(VIEWS) { i ->
+                    Box(
+                        Modifier.width(5.dp).height(if (i == centre.currentPage) 16.dp else 5.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(if (i == centre.currentPage) C.red else C.lineHi),
+                    )
+                }
+            }
         }
     }
 }
 
-/** The car from above, with whatever's open swung out in red. */
+/** The car from above (the user's own pictures), with whatever's open in the accent colour. */
 @Composable
 private fun DoorsPanel(d: Doors) {
+    val left = d.frontLeft || d.rearLeft
+    val right = d.frontRight || d.rearRight
+    val picture = when {
+        left && right && d.bonnet && d.boot -> R.drawable.car_all
+        left && right && d.bonnet -> R.drawable.car_both_bonnet
+        left && right && d.boot -> R.drawable.car_both_hatch
+        left && right -> R.drawable.car_both
+        left && d.bonnet && d.boot -> R.drawable.car_left_bonnet_hatch
+        right && d.bonnet && d.boot -> R.drawable.car_right_bonnet_hatch
+        left && d.bonnet -> R.drawable.car_left_bonnet
+        right && d.bonnet -> R.drawable.car_right_bonnet
+        left && d.boot -> R.drawable.car_left_hatch
+        right && d.boot -> R.drawable.car_right_hatch
+        left -> R.drawable.car_left
+        right -> R.drawable.car_right
+        d.bonnet && d.boot -> R.drawable.car_bonnet_hatch
+        d.bonnet -> R.drawable.car_bonnet
+        d.boot -> R.drawable.car_hatch
+        else -> R.drawable.car_closed
+    }
+    val tint = remember(C.red) { accentFilter(C.red) }
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(d.describe(), color = C.red, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-        Canvas(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)) {
-            val h = size.height * 0.92f
-            val w = h * 0.46f
-            val cx = size.width / 2
-            val top = (size.height - h) / 2
-            val left = cx - w / 2
-            val right = cx + w / 2
-            val bottom = top + h
-            val line = 3.dp.toPx()
-            val closed = C.ink2
-            val open = C.red
-            val r = androidx.compose.ui.geometry.CornerRadius(w * 0.3f, w * 0.3f)
-
-            // Body
-            drawRoundRect(C.panelHi, Offset(left, top), Size(w, h), r)
-            drawRoundRect(C.lineHi, Offset(left, top), Size(w, h), r, style = Stroke(line))
-            // Windscreen, roof and rear window
-            val glass = Color(0xFF2A303B)
-            drawRoundRect(glass, Offset(left + w * 0.12f, top + h * 0.30f), Size(w * 0.76f, h * 0.12f), androidx.compose.ui.geometry.CornerRadius(12f, 12f))
-            drawRoundRect(glass, Offset(left + w * 0.14f, top + h * 0.66f), Size(w * 0.72f, h * 0.10f), androidx.compose.ui.geometry.CornerRadius(12f, 12f))
-
-            // Bonnet: the front panel, lifted when open
-            val bonnetH = h * 0.26f
-            if (d.bonnet) {
-                drawRoundRect(open.copy(alpha = 0.25f), Offset(left + w * 0.08f, top - h * 0.05f), Size(w * 0.84f, bonnetH), r)
-                drawRoundRect(open, Offset(left + w * 0.08f, top - h * 0.05f), Size(w * 0.84f, bonnetH), r, style = Stroke(line))
-            } else {
-                drawLine(closed.copy(alpha = 0.5f), Offset(left + w * 0.1f, top + bonnetH), Offset(right - w * 0.1f, top + bonnetH), line / 2)
-            }
-            // Boot
-            val bootTop = bottom - h * 0.16f
-            if (d.boot) {
-                drawRoundRect(open.copy(alpha = 0.25f), Offset(left + w * 0.08f, bootTop + h * 0.05f), Size(w * 0.84f, h * 0.16f), r)
-                drawRoundRect(open, Offset(left + w * 0.08f, bootTop + h * 0.05f), Size(w * 0.84f, h * 0.16f), r, style = Stroke(line))
-            } else {
-                drawLine(closed.copy(alpha = 0.5f), Offset(left + w * 0.1f, bootTop), Offset(right - w * 0.1f, bootTop), line / 2)
-            }
-
-            // A door: hinged at its front edge, swung out 55° when open
-            fun door(leftSide: Boolean, from: Float, to: Float, isOpen: Boolean) {
-                val x = if (leftSide) left else right
-                val len = to - from
-                if (isOpen) {
-                    val a = Math.toRadians(55.0)
-                    val dx = (len * kotlin.math.sin(a)).toFloat() * if (leftSide) -1 else 1
-                    val dy = (len * kotlin.math.cos(a)).toFloat()
-                    drawLine(open.copy(alpha = 0.3f), Offset(x, from), Offset(x + dx, from + dy), line * 4, StrokeCap.Round)
-                    drawLine(open, Offset(x, from), Offset(x + dx, from + dy), line * 1.6f, StrokeCap.Round)
-                } else {
-                    drawLine(closed, Offset(x, from), Offset(x, to), line * 1.6f, StrokeCap.Round)
-                }
-            }
-            door(true, top + h * 0.36f, top + h * 0.62f, d.frontLeft)
-            door(false, top + h * 0.36f, top + h * 0.62f, d.frontRight)
-            if (d.rearLeft) door(true, top + h * 0.62f, top + h * 0.80f, true)
-            if (d.rearRight) door(false, top + h * 0.62f, top + h * 0.80f, true)
-        }
-    }
-}
-
-private data class Turn(val icon: ImageVector?, val distance: String?, val instruction: String)
-
-/** Waze's notification as an arrow, a distance and what to do. */
-private fun turnOf(nav: NavInfo): Turn {
-    val all = listOfNotNull(nav.title, nav.text).joinToString(" ")
-    val distance = CarNotifications.DISTANCE.find(all)?.value
-    val instruction = listOfNotNull(nav.title, nav.text)
-        .map { if (distance != null) it.replace(distance, "") else it }
-        .map { it.trim(' ', '·', ',', '-', '–', ':') }
-        .filter { it.isNotEmpty() }
-        .joinToString(" · ")
-        .ifEmpty { nav.title }
-    val l = all.lowercase()
-    val icon = when {
-        "u-turn" in l || "u turn" in l || "make a u" in l -> Ic.uTurn
-        "roundabout" in l -> Ic.roundabout
-        "keep left" in l || "bear left" in l || "slight left" in l -> Ic.keepLeft
-        "keep right" in l || "bear right" in l || "slight right" in l || "exit" in l -> Ic.keepRight
-        "left" in l -> Ic.turnLeft
-        "right" in l -> Ic.turnRight
-        "arriv" in l || "destination" in l -> Ic.arrive
-        "straight" in l || "continue" in l -> Ic.straight
-        else -> null
-    }
-    return Turn(icon, distance, instruction)
-}
-
-@Composable
-private fun NavPanel(nav: NavInfo) {
-    val context = LocalContext.current
-    val turn = remember(nav) { turnOf(nav) }
-    val wazeArrow = remember(nav.icon) {
-        runCatching { nav.icon?.loadDrawable(context)?.toBitmap(160, 160)?.asImageBitmap() }.getOrNull()
-    }
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Box(Modifier.size(110.dp).clip(RoundedCornerShape(20.dp)).background(C.redTint), contentAlignment = Alignment.Center) {
-                when {
-                    turn.icon != null -> Icon(turn.icon, null, tint = C.red, modifier = Modifier.size(84.dp))
-                    wazeArrow != null -> Image(wazeArrow, null, Modifier.size(84.dp))
-                    else -> Icon(Ic.straight, null, tint = C.red, modifier = Modifier.size(84.dp))
-                }
-            }
-            Text(turn.distance ?: "", color = C.ink, fontSize = 52.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic, maxLines = 1)
-        }
-        Text(turn.instruction, color = C.ink, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, lineHeight = 32.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
-        nav.sub?.let { Text(it, color = C.ink2, fontSize = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        Image(
+            painterResource(picture), d.describe(),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp),
+            contentScale = ContentScale.Fit,
+            colorFilter = tint,
+        )
     }
 }
 
 /**
- * With no route in Waze: what the engine is doing (the bars) and this drive so far. Numbers are big
+ * The pictures are drawn in red: turned to the accent colour's hue (white stays white), or left as
+ * they are while the accent is red.
+ */
+private fun accentFilter(accent: Color): ColorFilter? {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(accent.toArgb(), hsv)
+    val red = FloatArray(3)
+    android.graphics.Color.colorToHSV(C.RED.toArgb(), red)
+    var deg = hsv[0] - red[0]
+    if (deg > 180) deg -= 360
+    if (deg < -180) deg += 360
+    if (kotlin.math.abs(deg) < 3f) return null
+    val a = kotlin.math.cos(Math.toRadians(deg.toDouble())).toFloat()
+    val b = kotlin.math.sin(Math.toRadians(deg.toDouble())).toFloat()
+    return ColorFilter.colorMatrix(
+        ColorMatrix(
+            floatArrayOf(
+                0.213f + 0.787f * a - 0.213f * b, 0.715f - 0.715f * a - 0.715f * b, 0.072f - 0.072f * a + 0.928f * b, 0f, 0f,
+                0.213f - 0.213f * a + 0.143f * b, 0.715f + 0.285f * a + 0.140f * b, 0.072f - 0.072f * a - 0.283f * b, 0f, 0f,
+                0.213f - 0.213f * a - 0.787f * b, 0.715f - 0.715f * a + 0.715f * b, 0.072f + 0.928f * a + 0.072f * b, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+    )
+}
+
+/**
+ * What the engine is doing (the bars) and this drive so far. Numbers are big
  * enough to read at a glance; the outside temperature is in the header, so its place here shows how
  * long this drive has been.
  */
@@ -668,7 +783,7 @@ private fun Bar(name: String, value: Float?, max: Float, number: String?, unit: 
 
 /** A figure for this drive: a small name over a big number. */
 @Composable
-private fun Stat(name: String, value: String?, unit: String, modifier: Modifier = Modifier) {
+internal fun Stat(name: String, value: String?, unit: String, modifier: Modifier = Modifier) {
     Column(modifier) {
         Text(name, color = C.muted, fontSize = 17.sp, maxLines = 1)
         Row {
@@ -1086,6 +1201,7 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                 Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                AccentCard(state, actions)
                 Card("Name") {
                     var name by remember(state.name) { mutableStateOf(state.name) }
                     OutlinedTextField(
@@ -1121,8 +1237,31 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                     }
                     Wide("Make CarDash the home screen", actions.chooseHome)
                 }
+                Card("Speed warning") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Warn me when I'm too fast", color = C.ink, fontSize = 17.sp)
+                            Text("\"SLOW THE FUCK DOWN\" across the whole screen", color = C.muted, fontSize = 14.sp)
+                        }
+                        Switch(
+                            checked = state.speedWarnOn,
+                            onCheckedChange = actions.setSpeedWarnOn,
+                            colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
+                        )
+                    }
+                    if (state.speedWarnOn) {
+                        Stepper(
+                            "Over", "${state.speedWarnKmh} km/h",
+                            less = { actions.setSpeedWarnKmh(state.speedWarnKmh - Settings.SPEED_WARN_STEP) },
+                            more = { actions.setSpeedWarnKmh(state.speedWarnKmh + Settings.SPEED_WARN_STEP) },
+                        )
+                        Text("It goes away once you're 5 km/h under again.", color = C.muted, fontSize = 14.sp)
+                    }
+                }
+                NavigationCard(state, actions)
                 Card("Permissions") {
-                    Permission("Notification access", "Waze's next turn, and music controls", state.hasNotifications, actions.allowNotifications)
+                    Permission("Notification access", "Google Maps' next turn, and music controls", state.hasNotifications, actions.allowNotifications)
+                    Permission("Location", "Your position on the map, for directions", state.nav.permission, actions.allowLocation)
                 }
             }
             Column(
@@ -1214,10 +1353,7 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                     }
                     Wide("Undo matching", actions.resetFuel)
                 }
-                Card("Waze") {
-                    Text(if (state.nav != null) "Navigating: shown on Home" else "Not navigating", color = C.ink, fontSize = 17.sp)
-                    Text("Waze's last notification: ${state.lastWaze ?: "none yet"}", color = C.muted, fontSize = 14.sp)
-                }
+                OfflineMapCard(state, actions)
             }
         }
     }
@@ -1276,8 +1412,6 @@ private fun CanCard(state: DashState, actions: DashActions) {
                 }
             }
         }
-        Wide("Save radio files (for a closer look)", actions.saveRadioFiles)
-        state.radioFiles?.let { Text(it, color = C.ink2, fontSize = 14.sp) }
     }
     picking?.let { v -> CanPicker(v, onPick = { role, pick -> actions.setCanPick(role, pick); picking = null }, onDismiss = { picking = null }) }
 }
@@ -1333,7 +1467,7 @@ internal fun Card(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Permission(name: String, why: String, granted: Boolean, ask: () -> Unit) {
+internal fun Permission(name: String, why: String, granted: Boolean, ask: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(name, color = C.ink, fontSize = 17.sp)

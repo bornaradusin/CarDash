@@ -45,6 +45,10 @@ fun Dial(
     labelSize: Float = 0.075f,
     /** Numbers every this much (a multiple of [major]); fewer numbers can be bigger. */
     labelEvery: Float = major,
+    /** A middle-length tick every this much, between the long [major] and short [minor] ones; null = none. */
+    mid: Float? = null,
+    /** Smaller numbers every this much, in between the big ones (20, 60, 100…); null = none. */
+    smallLabelEvery: Float? = null,
     label: (Float) -> String = { it.toInt().toString() },
     needle: Boolean = true,
     /** Draws the small arc low in the dial (coolant on the RPM dial); its fill, 0..1, or null for empty. */
@@ -85,18 +89,29 @@ fun Dial(
             var v = 0f
             while (v <= max + 0.001f) {
                 val isMajor = (v / major) - kotlin.math.round(v / major) in -0.001f..0.001f
+                val isMid = !isMajor && mid != null && (v / mid) - kotlin.math.round(v / mid) in -0.001f..0.001f
                 val a = Math.toRadians((START + SWEEP * v / max).toDouble())
                 val outer = r * 0.88f
-                val inner = outer - r * (if (isMajor) 0.12f else 0.06f)
+                // Short ticks near the rim, so the numbers can sit further out
+                val inner = outer - r * (if (isMajor) 0.06f else if (isMid) 0.045f else 0.03f)
                 val inRed = redFrom != null && v >= redFrom
                 val tickColor = if (inRed) C.red else C.ink2
-                drawLine(tickColor, point(c, a, inner), point(c, a, outer), if (isMajor) r * 0.018f else r * 0.009f, StrokeCap.Round)
+                val tickWidth = if (isMajor) r * 0.018f else if (isMid) r * 0.012f else if (mid != null) r * 0.008f else r * 0.009f
+                drawLine(tickColor, point(c, a, inner), point(c, a, outer), tickWidth, StrokeCap.Round)
                 val labelled = isMajor && ((v / labelEvery) - kotlin.math.round(v / labelEvery)) in -0.001f..0.001f
-                if (labelled) {
-                    paint.textSize = r * labelSize * 2f
-                    paint.color = (if (inRed) C.red else C.ink).toArgb()
-                    val p = point(c, a, r * 0.6f)
-                    drawContext.canvas.nativeCanvas.drawText(label(v), p.x, p.y + paint.textSize * 0.35f, paint)
+                val small = !labelled && smallLabelEvery != null &&
+                    ((v / smallLabelEvery) - kotlin.math.round(v / smallLabelEvery)) in -0.001f..0.001f
+                if (labelled || small) {
+                    paint.textSize = r * labelSize * 2f * (if (small) 0.55f else 1f)
+                    paint.color = (if (inRed) C.red else if (small) C.ink2 else C.ink).toArgb()
+                    // Just inside the ticks with the same gap all round: how far the number reaches
+                    // towards the rim depends on its width, its height and which way it faces
+                    val text = label(v)
+                    val halfW = paint.measureText(text) / 2f
+                    val halfH = paint.textSize * 0.36f
+                    val reach = kotlin.math.abs(cos(a).toFloat()) * halfW + kotlin.math.abs(sin(a).toFloat()) * halfH
+                    val p = point(c, a, r * 0.82f - r * 0.035f - reach)
+                    drawContext.canvas.nativeCanvas.drawText(text, p.x, p.y + paint.textSize * 0.35f, paint)
                 }
                 v += minor
             }

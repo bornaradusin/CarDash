@@ -73,6 +73,9 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
+    // The 3D map and saved map areas (OpenGL ES: the radio's graphics chip is happiest with it)
+    implementation("org.maplibre.gl:android-sdk-opengl:13.5.0")
+
     // The OBD dongle's USB serial chip (CH340, FTDI, CP210x, PL2303)
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
 }
