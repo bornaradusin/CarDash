@@ -111,6 +111,36 @@ class Settings(context: Context) {
         _speedWarnKmh.value = k
     }
 
+    private val _shiftWarnOn = MutableStateFlow(sp.getBoolean("shiftWarnOn", true))
+    /** "Shift up" across the whole screen over [shiftWarnRpm], except in top gear. */
+    val shiftWarnOn: StateFlow<Boolean> = _shiftWarnOn
+
+    fun setShiftWarnOn(v: Boolean) {
+        sp.edit().putBoolean("shiftWarnOn", v).apply()
+        _shiftWarnOn.value = v
+    }
+
+    private val _shiftWarnRpm = MutableStateFlow(sp.getInt("shiftWarnRpm", SHIFT_WARN_DEFAULT))
+    val shiftWarnRpm: StateFlow<Int> = _shiftWarnRpm
+
+    fun setShiftWarnRpm(v: Int) {
+        val r = (v / SHIFT_WARN_STEP * SHIFT_WARN_STEP).coerceIn(SHIFT_WARN_MIN, SHIFT_WARN_MAX)
+        sp.edit().putInt("shiftWarnRpm", r).apply()
+        _shiftWarnRpm.value = r
+    }
+
+    private val _topGear = MutableStateFlow(sp.getFloat("topGearRpmPerKmh", 0f))
+    /**
+     * Engine rpm per km/h in top gear, learnt while driving (the lowest steady figure seen), so
+     * "Shift up" doesn't show when there's no gear left. 0 until it's been learnt.
+     */
+    val topGear: StateFlow<Float> = _topGear
+
+    fun setTopGear(v: Float) {
+        sp.edit().putFloat("topGearRpmPerKmh", v).apply()
+        _topGear.value = v
+    }
+
     private val _accent = MutableStateFlow(sp.getInt("accent", DEFAULT_ACCENT))
     /** The accent colour, as ARGB: red unless the person picks another. */
     val accent: StateFlow<Int> = _accent
@@ -128,6 +158,16 @@ class Settings(context: Context) {
     fun setSpoken(v: Boolean) {
         sp.edit().putBoolean("spokenDirections", v).apply()
         _spoken.value = v
+    }
+
+    private val _googleKey = MutableStateFlow(sp.getString("googleKey", null) ?: "")
+    /** The driver's own Google key, for Eircodes. Blank: Eircodes go to Google Maps and come back with Share. */
+    val googleKey: StateFlow<String> = _googleKey
+
+    fun setGoogleKey(v: String) {
+        val clean = v.trim()
+        sp.edit().putString("googleKey", clean).apply()
+        _googleKey.value = clean
     }
 
     private val _bigMap = MutableStateFlow(sp.getBoolean("bigMap", true))
@@ -154,6 +194,10 @@ class Settings(context: Context) {
         const val SPEED_WARN_MIN = 50
         const val SPEED_WARN_MAX = 250
         const val SPEED_WARN_STEP = 10
+        const val SHIFT_WARN_DEFAULT = 2500
+        const val SHIFT_WARN_MIN = 1500
+        const val SHIFT_WARN_MAX = 6000
+        const val SHIFT_WARN_STEP = 100
         const val SLOTS = 4
         val DEFAULT_ICONS = listOf("android_auto", "waze", "music", "video")
     }

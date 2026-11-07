@@ -33,6 +33,38 @@ object Pids {
         }
     }
 
+    /** How many data bytes each reading has in a mode 01 answer. */
+    private val LENGTH = mapOf(
+        LOAD to 1, COOLANT to 1, MAP to 1, RPM to 2, SPEED to 1, INTAKE to 1, THROTTLE to 1, FUEL to 1,
+        BARO to 1, AMBIENT to 1, OIL to 1, PEDAL to 1, MAF to 2, TIMING to 1, FUEL_RATE to 2,
+    )
+
+    /** Whether these readings fit one CAN frame when asked for together (7 bytes: 41, then each PID and its data). */
+    fun fitsOneFrame(pids: IntArray): Boolean = 1 + pids.sumOf { 1 + (LENGTH[it] ?: 4) } <= 7
+
+    /**
+     * Several readings from one answer ("41 0C 1A F8 0D 32" → RPM and speed). Readings the car doesn't
+     * have are left out of its answer; a longer answer comes as numbered frames ("0: …", "1: …").
+     */
+    fun multi(response: String): Map<Int, IntArray> {
+        val lines = response.uppercase().split('\r', '\n').map { it.replace(" ", "").trim() }.filter { it.isNotEmpty() }
+        val frames = lines.filter { ':' in it }.map { it.substringAfter(':') }
+        val hex = (if (frames.isNotEmpty()) frames.joinToString("") else lines.firstOrNull { it.startsWith("41") }) ?: return emptyMap()
+        if (!hex.all { it in "0123456789ABCDEF" }) return emptyMap()
+        val start = hex.indexOf("41")
+        if (start < 0) return emptyMap()
+        val out = HashMap<Int, IntArray>()
+        var p = start + 2
+        while (p + 2 <= hex.length) {
+            val pid = hex.substring(p, p + 2).toInt(16)
+            val n = LENGTH[pid] ?: break
+            if (p + 2 + n * 2 > hex.length) break
+            out[pid] = IntArray(n) { hex.substring(p + 2 + it * 2, p + 4 + it * 2).toInt(16) }
+            p += 2 + n * 2
+        }
+        return out
+    }
+
     /** Volts from the dongle's ATRV answer ("12.6V"). */
     fun volts(response: String): Float? =
         Regex("(\\d{1,2}\\.\\d)\\s*V").find(response.uppercase())?.groupValues?.get(1)?.toFloatOrNull()

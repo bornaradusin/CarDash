@@ -62,11 +62,13 @@ class CarNotifications : NotificationListenerService() {
             text,
         ).map { it.trim(' ', '·', '-', '–', ',') }.filter { it.isNotEmpty() }.joinToString(" · ")
         if (instruction.isEmpty() && distance == null) return
-        // "14 min · 9.2 km · 18:26 ETA"
-        val parts = sub?.split('·')?.map { it.trim() }.orEmpty()
-        val timeLeft = parts.firstOrNull { TIME_LEFT.containsMatchIn(it) }
-        val distanceLeft = parts.firstOrNull { DISTANCE.matches(it) }
-        val arrive = parts.firstNotNullOfOrNull { CLOCK.find(it)?.value }
+        // "14 min · 9.2 km · 18:26 ETA", or "11:06 pm ETA"; some versions put parts elsewhere
+        val parts = listOfNotNull(sub, cs(Notification.EXTRA_INFO_TEXT), cs(Notification.EXTRA_SUMMARY_TEXT))
+            .flatMap { it.split('·', '•', '|') }.map { it.trim() }.filter { it.isNotEmpty() }
+        val timeLeft = parts.firstNotNullOfOrNull { p -> if (CLOCK.containsMatchIn(p)) null else TIME_LEFT_FULL.find(p)?.value }
+        val distanceLeft = parts.firstNotNullOfOrNull { p -> if (CLOCK.containsMatchIn(p) || TIME_LEFT.containsMatchIn(p)) null else DISTANCE.find(p)?.value }
+        // In 24-hour time like the clock on Home ("11:06 pm" is 23:06), so it fits
+        val arrive = (parts + listOfNotNull(text)).firstNotNullOfOrNull { CLOCK.find(it) }?.let { clock24(it) }
         navKey = sbn.key
         nav.value = NavInfo(
             distance = distance,
@@ -93,7 +95,21 @@ class CarNotifications : NotificationListenerService() {
         val nav = MutableStateFlow<NavInfo?>(null)
         val DISTANCE = Regex("\\d+(?:[.,]\\d+)?\\s?(m|km|ft|mi|yd)\\b", RegexOption.IGNORE_CASE)
         private val TIME_LEFT = Regex("\\d+\\s?(min|mins|h|hr|hrs)\\b", RegexOption.IGNORE_CASE)
-        private val CLOCK = Regex("\\b\\d{1,2}:\\d{2}(\\s?[AaPp][Mm])?")
+        /** "40 min", "1 hr 5 min", "2 h". */
+        private val TIME_LEFT_FULL = Regex(
+            "(\\d+\\s?(h|hr|hrs|hour|hours)\\s*)?\\d+\\s?(min|mins)\\b|\\d+\\s?(h|hr|hrs|hour|hours)\\b",
+            RegexOption.IGNORE_CASE,
+        )
+        /** A time of day; Android puts a narrow no-break space before am/pm. */
+        private val CLOCK = Regex("\\b(\\d{1,2}):(\\d{2})(?:[\\s\\u00A0\\u202F]?([AaPp])\\.?[Mm]\\.?)?")
+
+        private fun clock24(m: MatchResult): String {
+            var h = m.groupValues[1].toInt()
+            val ampm = m.groupValues[3].lowercase()
+            if (ampm == "p" && h < 12) h += 12
+            if (ampm == "a" && h == 12) h = 0
+            return "%d:%s".format(h, m.groupValues[2])
+        }
         val connected = MutableStateFlow(false)
 
         fun allowed(context: Context): Boolean =

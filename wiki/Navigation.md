@@ -13,7 +13,30 @@ Hold the middle box on Home, on any of its views, or tap **Where to?** on the ma
 
 ### Eircodes and places the search doesn't know
 
-CarDash's search (the free OpenStreetMap search) doesn't know Eircodes. Type an Eircode, or anything it can't find, and CarDash offers **Directions in Google Maps**: Google Maps opens and starts the route. Come back to CarDash any time: the middle box shows Google's next turn.
+CarDash's own search (the free OpenStreetMap search) doesn't know Eircodes. There are two ways to get there with CarDash:
+
+- **Share from Google Maps (no setup).** Type the Eircode, or anything the search can't find, and tap **Find it in Google Maps**. Google Maps opens on the place: tap **Share**, then **CarDash**. CarDash comes back, finds where the place is and starts the route straight away. This works from anywhere in Google Maps (a place, a dropped pin, a directions screen), and "Open in maps" from other apps (a location in a message, an address in a contact) can open CarDash too.
+- **Your own Google key (Eircodes found right in CarDash).** Add a key in **Settings › Navigation › Google key for Eircodes** and Eircodes come up in CarDash's search like any other place. See [Getting a Google key](#getting-a-google-key) below.
+
+![An Eircode with no key: find it in Google Maps, then Share › CarDash](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/eircode-google-maps.jpg)
+
+![An Eircode with your own Google key: found right in CarDash](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/eircode-google-key.jpg)
+
+Or tap **Or let Google Maps drive**: Google Maps opens and starts the route itself. Come back to CarDash any time: the middle box shows Google's next turn.
+
+### Getting a Google key
+
+Free for anything you'll use it for: Google gives 10,000 address lookups a month free, and CarDash uses one per Eircode you look up. Google asks for a card to set up billing even so.
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) and sign in with your Google account.
+2. Make a project (call it CarDash) and set up billing for it when asked.
+3. Open **Google Maps Platform › Keys & Credentials** and click **Create credentials › API key**.
+4. Under API restrictions, pick **Geocoding API** only, and save. (If Google says the Geocoding API isn't turned on, open the **API Library**, find **Geocoding API** and click **Enable**.)
+5. Copy the key (it starts with AIza) and paste it into **Settings › Navigation › Google key for Eircodes** in CarDash. CarDash tries it once before keeping it and shows Google's reason if it doesn't work.
+
+![Settings › Navigation: Google key for Eircodes](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/google-key-setting.jpg)
+
+To be sure it never costs anything, set the Geocoding API's daily limit to a few hundred under **APIs & Services › Geocoding API › Quotas**.
 
 ## On a route
 
@@ -29,13 +52,19 @@ Swipe the middle box down to **Directions** for the next turn big, the one after
 
 ### Big map
 
-With **Settings › Navigation › Big map on a route** on, the map takes the RPM dial's place while you're on a route and the map is showing. Above it, six small gauges instead of four: RPM and coolant join oil, boost, intake air and battery. Swipe the middle box to another view, or end the route, and Home goes back to normal.
+With **Settings › Navigation › Big map on a route** on, the map takes the RPM dial's place while you're on a route and the map is showing. Under it, six small gauges instead of four: RPM and coolant join oil, boost, intake air and battery. Swipe the middle box to another view, or end the route, and Home goes back to normal.
 
 ![The big map on a route](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/big-map.jpg)
 
+## Speed limits and traffic lights
+
+On the map, a round **speed-limit sign** shows the limit on the road you're on; it turns red inside once you're more than 2 km/h over. **Traffic lights** stand on the map where they are. Both come from OpenStreetMap (the Overpass API), fetched for the area around you as you drive. In Ireland the limits are well mapped on main roads and in towns; where a road has no limit in OpenStreetMap, the sign just doesn't show.
+
+The roads are drawn lighter than the dark map, with white edges, so they stand out at a glance, and the buildings stand on the streets in 3D.
+
 ## Google Maps
 
-Navigating in the Google Maps app instead? Its next turn, the distance to it and when you'll arrive show in the middle box's **Directions** view, with a button back to Google Maps. CarDash needs **Notification access** for this (Settings › Permissions).
+Navigating in the Google Maps app instead? Its next turn fills the middle box's **Directions** view (Google's arrow big in the middle, the distance to it and what to do), with when you'll arrive, the time left and the distance to go under it, and a button back to Google Maps. CarDash needs **Notification access** for this (Settings › Permissions).
 
 ## Offline map
 
@@ -54,12 +83,13 @@ Searching and planning a new route still need the internet; a route you've alrea
 ## What it needs
 
 - **Location**: CarDash asks the first time the map or Where to? opens. Allow it in **Settings › Permissions** if you said no.
-- **Internet** for the map (unless the area is saved), the search and new routes.
+- **Internet** for the map (unless the area is saved), the search, new routes, and speed limits and traffic lights.
 
 ## Where the data comes from
 
 - The map: [OpenFreeMap](https://openfreemap.org), from OpenStreetMap
 - The search: [Photon](https://photon.komoot.io) by Komoot, from OpenStreetMap
 - The routes: [OSRM](https://project-osrm.org) on the OpenStreetMap community's server
+- Speed limits and traffic lights: the [Overpass API](https://overpass-api.de)
 
 All free and without accounts. Map data © OpenStreetMap contributors.

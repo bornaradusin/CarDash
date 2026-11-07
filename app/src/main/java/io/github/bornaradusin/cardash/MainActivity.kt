@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings as AndroidSettings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,19 +20,24 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.bornaradusin.cardash.car.Apps
+import io.github.bornaradusin.cardash.car.CanRole
 import io.github.bornaradusin.cardash.car.CarNotifications
 import io.github.bornaradusin.cardash.car.Media
-import io.github.bornaradusin.cardash.obd.ObdLink
-import io.github.bornaradusin.cardash.car.CanRole
 import io.github.bornaradusin.cardash.car.canValues
 import io.github.bornaradusin.cardash.car.effectivePicks
 import io.github.bornaradusin.cardash.nav.Places
+import io.github.bornaradusin.cardash.nav.SharedPlace
+import io.github.bornaradusin.cardash.obd.ObdLink
 import io.github.bornaradusin.cardash.ui.C
 import io.github.bornaradusin.cardash.ui.CarDash
+import io.github.bornaradusin.cardash.ui.CarKeyboardHost
 import io.github.bornaradusin.cardash.ui.DashActions
 import io.github.bornaradusin.cardash.ui.DashState
 import io.github.bornaradusin.cardash.ui.Scaled
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -49,6 +55,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         media = Media(this)
+        takeShared(intent)
 
         val actions = DashActions(
             launch = { pkg -> Apps.launch(this, pkg) },
@@ -142,7 +149,10 @@ class MainActivity : ComponentActivity() {
             serviceLater = { app.service.later() },
             setSpeedWarnOn = { app.settings.setSpeedWarnOn(it) },
             setSpeedWarnKmh = { app.settings.setSpeedWarnKmh(it) },
-            search = { q -> Places.search(q, app.nav.state.value.here) },
+            setShiftWarnOn = { app.settings.setShiftWarnOn(it) },
+            setShiftWarnRpm = { app.settings.setShiftWarnRpm(it) },
+            setTopGear = { app.settings.setTopGear(it) },
+            search = { q -> Places.search(q, app.nav.state.value.here, app.settings.googleKey.value) },
             preview = { p -> app.nav.preview(p.pos) },
             go = { p, route ->
                 app.places.used(p)
@@ -156,6 +166,7 @@ class MainActivity : ComponentActivity() {
             askLocation = { askLocation(force = false) },
             allowLocation = { askLocation(force = true) },
             setSpoken = { app.settings.setSpoken(it) },
+            setGoogleKey = { app.settings.setGoogleKey(it) },
             setBigMap = { app.settings.setBigMap(it) },
             setAccent = { argb ->
                 app.settings.setAccent(argb)
@@ -195,8 +206,12 @@ class MainActivity : ComponentActivity() {
             val service by app.service.state.collectAsState()
             val speedWarnOn by app.settings.speedWarnOn.collectAsState()
             val speedWarnKmh by app.settings.speedWarnKmh.collectAsState()
+            val shiftWarnOn by app.settings.shiftWarnOn.collectAsState()
+            val shiftWarnRpm by app.settings.shiftWarnRpm.collectAsState()
+            val topGear by app.settings.topGear.collectAsState()
             val accent by app.settings.accent.collectAsState()
             val spoken by app.settings.spoken.collectAsState()
+            val googleKey by app.settings.googleKey.collectAsState()
             val bigMap by app.settings.bigMap.collectAsState()
             val wifiOnly by app.settings.wifiOnly.collectAsState()
             val home by app.places.home.collectAsState()
@@ -238,8 +253,12 @@ class MainActivity : ComponentActivity() {
                 service = service,
                 speedWarnOn = speedWarnOn,
                 speedWarnKmh = speedWarnKmh,
+                shiftWarnOn = shiftWarnOn,
+                shiftWarnRpm = shiftWarnRpm,
+                topGear = topGear,
                 accent = accent,
                 spoken = spoken,
+                googleKey = googleKey,
                 bigMap = bigMap,
                 wifiOnly = wifiOnly,
                 home = home,
@@ -247,7 +266,7 @@ class MainActivity : ComponentActivity() {
                 recent = recent,
                 mapAreas = mapAreas,
             )
-            Scaled { CarDash(state, actions) }
+            Scaled { CarKeyboardHost { CarDash(state, actions) } }
         }
     }
 
@@ -283,11 +302,43 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         media.stop()
+        shareScope.cancel()
         super.onDestroy()
+    }
+
+    private val shareScope = MainScope()
+
+    /**
+     * A place shared to CarDash (Google Maps' Share → CarDash, or a geo: link from another app):
+     * finds where it is and starts the route there straight away.
+     */
+    private fun takeShared(intent: Intent?) {
+        intent ?: return
+        val text = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(intent.getStringExtra(Intent.EXTRA_TEXT), intent.getStringExtra(Intent.EXTRA_SUBJECT))
+                .joinToString("\n")
+            Intent.ACTION_VIEW -> intent.dataString
+            else -> null
+        }?.takeIf { it.isNotBlank() } ?: return
+        // Taken: so the same share isn't driven to twice
+        intent.action = null
+        Toast.makeText(this, "Finding the place…", Toast.LENGTH_SHORT).show()
+        shareScope.launch {
+            val place = runCatching { SharedPlace.from(text, app.settings.googleKey.value) }.getOrNull()
+            if (place == null) {
+                Toast.makeText(this@MainActivity, "Couldn't find a place in what was shared", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val route = app.nav.preview(place.pos)
+            app.places.used(place)
+            app.nav.go(place, route)
+            Toast.makeText(this@MainActivity, "Route to ${place.name}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        takeShared(intent)
         // The dongle was just plugged in: look for it straight away
         app.obd.start()
         // The radio's Home button while CarDash is open: back to the Home page

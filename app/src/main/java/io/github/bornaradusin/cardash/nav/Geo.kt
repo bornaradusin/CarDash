@@ -51,6 +51,14 @@ object Geo {
     /** A point part-way along a–b. */
     fun along(a: Pos, b: Pos, t: Double) = Pos(a.lat + (b.lat - a.lat) * t, a.lon + (b.lon - a.lon) * t)
 
+    /** The point m metres from p in compass direction [bearing] (flat-earth, for short hops). */
+    fun offset(p: Pos, bearing: Double, m: Double): Pos {
+        val r = Math.toRadians(bearing)
+        val dLat = Math.toDegrees(m * cos(r) / EARTH_M)
+        val dLon = Math.toDegrees(m * sin(r) / (EARTH_M * cos(Math.toRadians(p.lat))))
+        return Pos(p.lat + dLat, p.lon + dLon)
+    }
+
     /** "300 m", "1.4 km", "12 km". */
     fun distanceText(m: Double): String = when {
         m < 950 -> "${((m / 10).roundToInt() * 10).coerceAtLeast(0)} m"

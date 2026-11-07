@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,14 +50,18 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import io.github.bornaradusin.cardash.car.NavInfo
 import io.github.bornaradusin.cardash.nav.Geo
@@ -66,11 +71,12 @@ import io.github.bornaradusin.cardash.nav.Place
 import io.github.bornaradusin.cardash.nav.Places
 import io.github.bornaradusin.cardash.nav.Route
 import io.github.bornaradusin.cardash.nav.Step
-import io.github.bornaradusin.cardash.nav.text
 import io.github.bornaradusin.cardash.nav.road
+import io.github.bornaradusin.cardash.nav.text
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 // ---------- the turn arrows ----------
 
@@ -142,6 +148,49 @@ private fun TurnBox(icon: ImageVector?, bitmap: androidx.compose.ui.graphics.Ima
 
 // ---------- middle box: directions ----------
 
+/**
+ * The next turn filling the middle box: the arrow big in the middle, how far, and what to do,
+ * all centred; [extra] goes under it (the turn after).
+ */
+@Composable
+private fun BigTurn(
+    icon: ImageVector?,
+    bitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    distance: String?,
+    instruction: String,
+    modifier: Modifier = Modifier,
+    extra: @Composable () -> Unit = {},
+) {
+    Column(
+        modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        TurnBox(icon, bitmap, 124)
+        Spacer(Modifier.height(10.dp))
+        if (distance != null) {
+            Text(distance, color = C.ink, fontSize = 50.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic, maxLines = 1, textAlign = TextAlign.Center)
+        }
+        Text(
+            instruction, color = C.ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, lineHeight = 29.sp,
+            maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+        )
+        extra()
+    }
+}
+
+/** Google's time left ("1 hr 5 min", "40 min") as a figure and its unit: 40 min, or 1:05 h. */
+private fun googleMinutes(t: String?): Pair<String?, String> {
+    t ?: return null to ""
+    val h = Regex("(\\d+)\\s*(?:h|hr|hrs|hour|hours)\\b", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+    val m = Regex("(\\d+)\\s*(?:min|mins|minute|minutes)\\b", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+    return when {
+        h == 0 && m == 0 -> t.substringBefore(' ') to t.substringAfter(' ', "")
+        h == 0 -> "$m" to "min"
+        else -> String.format(java.util.Locale.UK, "%d:%02d", h, m) to "h"
+    }
+}
+
 /** The next turn big, the one after, and when you'll get there; or Google Maps' turn; or nothing yet. */
 @Composable
 internal fun DirectionsPanel(state: DashState, actions: DashActions, onSearch: () -> Unit) {
@@ -150,23 +199,15 @@ internal fun DirectionsPanel(state: DashState, actions: DashActions, onSearch: (
     val step = nav.nextStep
     when {
         nav.route != null && step != null -> Column(Modifier.fillMaxSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                TurnBox(turnIcon(step), null, 104)
-                Text(
-                    Geo.distanceText(nav.toNextM), color = C.ink, fontSize = 50.sp, fontWeight = FontWeight.Bold,
-                    fontStyle = FontStyle.Italic, maxLines = 2, lineHeight = 52.sp,
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            Text(step.text(), color = C.ink, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, lineHeight = 32.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            nav.afterStep?.takeIf { step.type != "arrive" }?.let { then ->
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(turnIcon(then), null, tint = C.ink2, modifier = Modifier.size(22.dp))
-                    Text("Then ${then.text().replaceFirstChar { it.lowercase() }}", color = C.ink2, fontSize = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            BigTurn(turnIcon(step), null, Geo.distanceText(nav.toNextM), step.text(), Modifier.weight(1f)) {
+                nav.afterStep?.takeIf { step.type != "arrive" }?.let { then ->
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(turnIcon(then), null, tint = C.ink2, modifier = Modifier.size(20.dp))
+                        Text("Then ${then.text().replaceFirstChar { it.lowercase() }}", color = C.ink2, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
-            Spacer(Modifier.weight(1f))
             RouteFigures(nav)
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -201,17 +242,11 @@ private fun GoogleDirections(g: NavInfo, actions: DashActions) {
     val context = LocalContext.current
     val arrow = remember(g.icon) { runCatching { g.icon?.loadDrawable(context)?.toBitmap(160, 160)?.asImageBitmap() }.getOrNull() }
     Column(Modifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            TurnBox(if (arrow == null) googleTurn(g.instruction) else null, arrow, 104)
-            Text(g.distance ?: "", color = C.ink, fontSize = 50.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic, maxLines = 2, lineHeight = 52.sp)
-        }
-        Spacer(Modifier.height(10.dp))
-        Text(g.instruction, color = C.ink, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, lineHeight = 32.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.weight(1f))
+        BigTurn(if (arrow == null) googleTurn(g.instruction) else null, arrow, g.distance, g.instruction, Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Stat("Arrive", g.arrive, "", Modifier.weight(1f))
-            val t = g.timeLeft?.split(' ', limit = 2)
-            Stat("Time left", t?.getOrNull(0), t?.getOrNull(1) ?: "", Modifier.weight(1f))
+            val (t, tu) = googleMinutes(g.timeLeft)
+            Stat("Time left", t, tu, Modifier.weight(1f))
             val d = g.distanceLeft?.split(' ', limit = 2)
             Stat("Distance", d?.getOrNull(0), d?.getOrNull(1) ?: "", Modifier.weight(1f))
         }
@@ -277,7 +312,14 @@ internal fun MapPanel(state: DashState, actions: DashActions, onSearch: () -> Un
                     nav.destination != null -> Chip(nav.error ?: "Planning the route…")
                     !nav.permission -> Chip("Allow location for the map")
                     !nav.located -> Chip("Finding the GPS…")
-                    nav.street != null -> Chip(nav.street)
+                    // The street you're on, across the whole box so it reads at a glance
+                    nav.street != null -> Box(
+                        Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(C.panel.copy(alpha = 0.92f))
+                            .border(1.dp, C.line, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(nav.street, color = C.ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
                 if (wide) Spacer(Modifier.weight(1f))
                 if (nav.route != null) RoundIconButton(if (nav.muted) Ic.muted else Ic.volume, if (nav.muted) "Sound on" else "Mute", actions.toggleMute)
@@ -298,6 +340,23 @@ internal fun MapPanel(state: DashState, actions: DashActions, onSearch: () -> Un
                 nav.destination == null -> WhereToButton(onSearch, if (wide) Modifier.widthIn(max = 360.dp) else Modifier)
             }
         }
+        // The speed limit on the road you're on, red inside once you're over it
+        nav.limit?.let { limit ->
+            val kmh = state.obd.readings.speedKmh ?: (nav.speed * 3.6f)
+            SpeedSign(limit, kmh > limit + 2, Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 12.dp))
+        }
+    }
+}
+
+/** A round speed-limit sign as on Irish roads: white, red ring, the number in black. */
+@Composable
+private fun SpeedSign(limit: Int, over: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(64.dp).clip(CircleShape).background(if (over) Color(0xFFFFD9DC) else Color.White)
+            .border(7.dp, Color(0xFFE3061A), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("$limit", color = Color.Black, fontSize = if (limit >= 100) 21.sp else 25.sp, fontWeight = FontWeight.ExtraBold)
     }
 }
 
@@ -328,11 +387,14 @@ internal fun WhereToScreen(state: DashState, actions: DashActions, close: () -> 
     var results by remember { mutableStateOf<List<Place>?>(null) }
     var searching by remember { mutableStateOf(false) }
     var offline by remember { mutableStateOf(false) }
+    var googleSaid by remember { mutableStateOf<String?>(null) }
+    val hasKey = state.googleKey.isNotBlank()
     var picked by remember { mutableStateOf<Place?>(null) }
     var preview by remember { mutableStateOf<Route?>(null) }
     var previewing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf<Place?>(null) }
     val focus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
     val here = state.nav.here
 
     LaunchedEffect(Unit) {
@@ -342,14 +404,18 @@ internal fun WhereToScreen(state: DashState, actions: DashActions, close: () -> 
     LaunchedEffect(query) {
         val q = query.trim()
         offline = false
-        if (q.length < 3 || Places.isEircode(q)) {
+        googleSaid = null
+        // Eircodes: looked up with Google when there's a key, otherwise straight to the Google Maps card
+        if (q.length < 3 || (Places.isEircode(q) && !hasKey)) {
             results = if (Places.isEircode(q)) emptyList() else null
             searching = false
             return@LaunchedEffect
         }
         delay(400)
         searching = true
-        results = runCatching { actions.search(q) }.onFailure { offline = true }.getOrNull() ?: emptyList()
+        results = runCatching { actions.search(q) }.onFailure { e ->
+            if (Places.isEircode(q)) googleSaid = e.message ?: "no answer" else offline = true
+        }.getOrNull() ?: emptyList()
         searching = false
     }
     LaunchedEffect(picked) {
@@ -364,7 +430,9 @@ internal fun WhereToScreen(state: DashState, actions: DashActions, close: () -> 
         close()
     }
 
-    Row(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    // CarDash's keyboard along the bottom while typing; the places above make room for it
+    Column(Modifier.fillMaxSize()) {
+    Row(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = close), contentAlignment = Alignment.Center) {
@@ -380,7 +448,10 @@ internal fun WhereToScreen(state: DashState, actions: DashActions, close: () -> 
                     shape = RoundedCornerShape(30.dp),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { results?.firstOrNull()?.let { picked = it } }),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        results?.firstOrNull()?.let { picked = it }
+                        focusManager.clearFocus()
+                    }),
                     modifier = Modifier.weight(1f).height(62.dp).focusRequester(focus),
                 )
             }
@@ -388,31 +459,50 @@ internal fun WhereToScreen(state: DashState, actions: DashActions, close: () -> 
             val found = results
             when {
                 found != null && found.isEmpty() && !searching && q.length >= 3 -> Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val eircode = Places.isEircode(q)
                     Text(
-                        if (offline) "No internet for CarDash's map search." else "CarDash's map search doesn't know this one.",
-                        color = C.ink2, fontSize = 17.sp, modifier = Modifier.padding(start = 6.dp, top = 6.dp),
+                        when {
+                            googleSaid != null -> "Google didn't look it up: $googleSaid"
+                            offline -> "No internet for CarDash's map search."
+                            eircode && !hasKey -> "Eircodes are looked up in Google Maps."
+                            else -> "CarDash's map search doesn't know this one."
+                        },
+                        color = C.ink2, fontSize = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp, top = 6.dp),
                     )
+                    // Find it in Google Maps, then Share → CarDash: CarDash gets the place and drives there
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.redTint).border(1.dp, C.red, RoundedCornerShape(18.dp))
-                            .clickable { Places.directionsInGoogleMaps(context, q) }.padding(18.dp),
+                            .clickable { Places.findInGoogleMaps(context, q) }.padding(18.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         Icon(Ic.map, null, tint = C.red, modifier = Modifier.size(34.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Directions in Google Maps", color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                            Text("to $q", color = C.ink2, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("Find $q in Google Maps", color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("then tap Share › CarDash, and CarDash drives there", color = C.ink2, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         Icon(Ic.external, null, tint = C.ink2, modifier = Modifier.size(24.dp))
                     }
-                    Text(
-                        "Google Maps opens and starts the route. Come back to CarDash any time: the middle box shows Google's next turn and when you'll arrive.",
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.panel).border(1.dp, C.lineHi, RoundedCornerShape(18.dp))
+                            .clickable { Places.directionsInGoogleMaps(context, q) }.padding(horizontal = 18.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Or let Google Maps drive", color = C.ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            Text("the middle box still shows Google's next turn", color = C.muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Icon(Ic.external, null, tint = C.ink2, modifier = Modifier.size(22.dp))
+                    }
+                    if (eircode && !hasKey) Text(
+                        "Add your own Google key in Settings › Navigation and Eircodes are found right here.",
                         color = C.muted, fontSize = 15.sp, lineHeight = 21.sp, modifier = Modifier.padding(horizontal = 6.dp),
                     )
                 }
                 found != null && found.isNotEmpty() -> LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(found) { p ->
-                        PlaceRow(p, here, selected = p == picked, onClick = { picked = p }, onHold = { saving = p })
+                        PlaceRow(p, here, selected = p == picked, onClick = { picked = p; focusManager.clearFocus() }, onHold = { saving = p })
                     }
                 }
                 searching -> Text("Searching…", color = C.muted, fontSize = 17.sp, modifier = Modifier.weight(1f).padding(6.dp))
@@ -469,6 +559,8 @@ internal fun WhereToScreen(state: DashState, actions: DashActions, close: () -> 
                 Text("Hold a place to save it as Home or Work.", color = C.muted, fontSize = 14.sp)
             }
         }
+    }
+    CarKeyboardHere(Modifier.fillMaxWidth())
     }
 
     saving?.let { p ->
@@ -616,7 +708,84 @@ internal fun NavigationCard(state: DashState, actions: DashActions) {
     Card("Navigation") {
         SwitchRow("Spoken directions", "\"In 300 m, turn right\", in the radio's voice", state.spoken, actions.setSpoken)
         SwitchRow("Big map on a route", "While a route is set, the map takes the RPM dial's place", state.bigMap, actions.setBigMap)
+        var editingKey by remember { mutableStateOf(false) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("Google key for Eircodes", color = C.ink, fontSize = 17.sp)
+                Text(
+                    if (state.googleKey.isNotBlank()) "Set: Eircodes are found right in CarDash"
+                    else "Not set: Eircodes open in Google Maps, Share › CarDash brings them back",
+                    color = C.muted, fontSize = 14.sp,
+                )
+            }
+            SmallButton(if (state.googleKey.isNotBlank()) "Change" else "Add") { editingKey = true }
+        }
+        if (editingKey) GoogleKeyDialog(state.googleKey, onSave = { actions.setGoogleKey(it); editingKey = false }, onDismiss = { editingKey = false })
         Text("Google Maps' turns show in the middle box while it navigates (needs notification access).", color = C.muted, fontSize = 14.sp)
+    }
+}
+
+/**
+ * Pasting in the driver's own Google key. It's tried with one lookup before it's kept, so a key
+ * Google won't take (the Geocoding API not turned on, no billing set up) says why straight away.
+ */
+@Composable
+private fun GoogleKeyDialog(current: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(current) }
+    var checking by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val box = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { box.requestFocus() } }
+    fun save() {
+        val key = text.trim()
+        if (key.isEmpty() || problem != null) {
+            onSave(key)
+            return
+        }
+        checking = true
+        scope.launch {
+            problem = runCatching { Places.google("Limerick", key) }.exceptionOrNull()?.let { it.message ?: "no answer" }
+            checking = false
+            if (problem == null) onSave(key)
+        }
+    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.width(900.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)) {
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Google key for Eircodes", color = C.ink, fontSize = 24.sp)
+                Text(
+                    "Your own key from Google Cloud, with the Geocoding API turned on. Free up to 10,000 lookups a month. How to get one: the wiki's Navigation page. Paste puts in a key you've copied.",
+                    color = C.ink2, fontSize = 15.sp, lineHeight = 21.sp,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.trim().take(100); problem = null },
+                    singleLine = true,
+                    placeholder = { Text("AIza…", color = C.muted) },
+                    textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { save() }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(box),
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    when {
+                        checking -> Text("Trying it with Google…", color = C.muted, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                        problem != null -> Text("Google said: $problem", color = C.red, fontSize = 15.sp, lineHeight = 21.sp, maxLines = 2, modifier = Modifier.weight(1f))
+                        else -> Spacer(Modifier.weight(1f))
+                    }
+                    TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2) }
+                    TextButton(enabled = !checking, onClick = { save() }) {
+                        Text(
+                            if (problem != null) "Save anyway" else if (text.isBlank() && current.isNotBlank()) "Remove" else "Save",
+                            color = C.red, fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+            CarKeyboardHere(Modifier.fillMaxWidth())
+        }
     }
 }
 

@@ -23,9 +23,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -38,6 +40,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -59,6 +63,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -83,6 +89,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -90,6 +97,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import io.github.bornaradusin.cardash.R
 import io.github.bornaradusin.cardash.Settings
@@ -147,9 +156,15 @@ data class DashState(
     /** "Slow down" across the screen over this speed, when on. */
     val speedWarnOn: Boolean,
     val speedWarnKmh: Int,
+    /** "Shift up" across the screen over this rpm, when on; top gear's rpm per km/h once learnt (else 0). */
+    val shiftWarnOn: Boolean,
+    val shiftWarnRpm: Int,
+    val topGear: Float,
     /** The accent colour, ARGB. */
     val accent: Int,
     val spoken: Boolean,
+    /** The driver's own Google key for Eircodes; blank when there's none. */
+    val googleKey: String,
     val bigMap: Boolean,
     val wifiOnly: Boolean,
     val home: Place?,
@@ -195,6 +210,10 @@ class DashActions(
     val serviceLater: () -> Unit,
     val setSpeedWarnOn: (Boolean) -> Unit,
     val setSpeedWarnKmh: (Int) -> Unit,
+    val setShiftWarnOn: (Boolean) -> Unit,
+    val setShiftWarnRpm: (Int) -> Unit,
+    /** Saves top gear's rpm per km/h once it's been seen steady. */
+    val setTopGear: (Float) -> Unit,
     // Navigation
     val search: suspend (String) -> List<Place>,
     val preview: suspend (Place) -> Route?,
@@ -209,6 +228,7 @@ class DashActions(
     /** The Allow buttons: asks again, or opens Android's settings for CarDash after a no for good. */
     val allowLocation: () -> Unit,
     val setSpoken: (Boolean) -> Unit,
+    val setGoogleKey: (String) -> Unit,
     val setBigMap: (Boolean) -> Unit,
     // The look
     val setAccent: (Int) -> Unit,
@@ -322,6 +342,9 @@ fun CarDash(state: DashState, actions: DashActions) {
         ServiceReminder(state.service, actions) { scope.launch { pager.animateScrollToPage(PAGE_SERVICE) } }
     }
     // Too fast: across the whole screen, over everything
+    // Shift up gives way to the speed warning when that's showing
+    val speedy = state.speedWarnOn && (state.obd.readings.speedKmh ?: 0f) > state.speedWarnKmh - 5
+    if (state.shiftWarnOn && !speedy) ShiftWarning(state.obd.readings.rpm, state.obd.readings.speedKmh, state.shiftWarnRpm, state.topGear, actions.setTopGear)
     if (state.speedWarnOn) SpeedWarning(state.obd.readings.speedKmh, state.speedWarnKmh)
 }
 
@@ -342,8 +365,64 @@ private fun SpeedWarning(speedKmh: Float?, overKmh: Int) {
         else -> showing[0]
     }
     if (!showing[0]) return
+    ScreenWarning("SLOW THE FUCK DOWN", v?.toInt()?.toString() ?: "–", "km/h")
+}
+
+/**
+ * "Shift up" across the whole screen while the engine is over [atRpm] (for most of a second, so a
+ * gear change doesn't flash it), going once it's 300 rpm under. Not in top gear: CarDash learns
+ * top gear's rpm per km/h as the lowest steady figure it sees driving over 50 km/h, and keeps it.
+ */
+@Composable
+private fun ShiftWarning(rpm: Float?, speedKmh: Float?, atRpm: Int, topGear: Float, learnTopGear: (Float) -> Unit) {
+    // Learning top gear: the same rpm per km/h for 3 seconds, driving (not coasting at idle)
+    val steady = remember { Steady() }
+    LaunchedEffect(rpm, speedKmh) {
+        val r = rpm ?: return@LaunchedEffect
+        val v = speedKmh ?: return@LaunchedEffect
+        val now = System.currentTimeMillis()
+        if (v < 50f || r < 1300f) {
+            steady.since = 0L
+            return@LaunchedEffect
+        }
+        val ratio = r / v
+        if (steady.since == 0L || kotlin.math.abs(ratio - steady.ratio) / steady.ratio > 0.03f) {
+            steady.ratio = ratio
+            steady.since = now
+        } else if (now - steady.since > 3_000L && (topGear == 0f || ratio < topGear * 0.99f)) {
+            learnTopGear(ratio)
+        }
+    }
+    val showing = remember { booleanArrayOf(false) }
+    val above = remember { longArrayOf(0L) }
+    val r = rpm
+    val v = speedKmh
+    val inTop = r != null && v != null && v > 0f && topGear > 0f && r / v <= topGear * 1.06f
+    val now = System.currentTimeMillis()
+    showing[0] = when {
+        r == null || v == null || v < 5f || inTop -> false.also { above[0] = 0L }
+        r >= atRpm -> {
+            if (above[0] == 0L) above[0] = now
+            showing[0] || now - above[0] > 700
+        }
+        r < atRpm - 300 -> false.also { above[0] = 0L }
+        else -> showing[0]
+    }
+    if (!showing[0]) return
+    ScreenWarning("SHIFT UP", r?.toInt()?.toString() ?: "–", "rpm")
+}
+
+/** The same rpm per km/h, and since when: top gear shows as the lowest one held steady. */
+private class Steady {
+    var ratio = 0f
+    var since = 0L
+}
+
+/** A warning across the whole screen: the band in the middle, the red around it pulsing twice a second. */
+@Composable
+private fun ScreenWarning(title: String, figure: String, unit: String) {
     // The red above and below the band pulses twice a second for as long as it's showing
-    val flash by rememberInfiniteTransition(label = "slow down").animateFloat(
+    val flash by rememberInfiniteTransition(label = "warning").animateFloat(
         initialValue = 0.35f, targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(250), RepeatMode.Reverse),
         label = "flash",
@@ -360,15 +439,15 @@ private fun SpeedWarning(speedKmh: Float?, overKmh: Int) {
                 verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
             ) {
                 Text(
-                    "SLOW THE FUCK DOWN", color = C.red, fontSize = 96.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
+                    title, color = C.red, fontSize = 96.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
                     letterSpacing = 2.sp, maxLines = 1,
                     style = TextStyle(shadow = Shadow(C.red.copy(alpha = 0.6f), blurRadius = 28f)),
                 )
-                // The speed dead centre, km/h hanging off its right
+                // The figure dead centre, the unit hanging off its right
                 Box {
-                    Text(v?.toInt()?.toString() ?: "–", color = C.ink, fontSize = 88.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+                    Text(figure, color = C.ink, fontSize = 88.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
                     Text(
-                        "\u00A0km/h", color = C.muted, fontSize = 26.sp, maxLines = 1, softWrap = false,
+                        "\u00A0$unit", color = C.muted, fontSize = 26.sp, maxLines = 1, softWrap = false,
                         modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 22.dp)
                             .layout { m, c ->
                                 // takes no width, so the number stays centred
@@ -445,22 +524,31 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
 @Composable
 private fun NameDialog(name: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf(name) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = C.panelHi,
-        title = { Text("Name", color = C.ink) },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it.take(20) },
-                singleLine = true,
-                textStyle = TextStyle(color = C.ink, fontSize = 20.sp),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
-            )
-        },
-        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("Save", color = C.red, fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2) } },
-    )
+    val box = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { box.requestFocus() } }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.width(900.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)) {
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Name", color = C.ink, fontSize = 24.sp)
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(20) },
+                    singleLine = true,
+                    textStyle = TextStyle(color = C.ink, fontSize = 20.sp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onSave(text) }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(box),
+                )
+                Row {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2) }
+                    TextButton(onClick = { onSave(text) }) { Text("Save", color = C.red, fontWeight = FontWeight.Bold) }
+                }
+            }
+            CarKeyboardHere(Modifier.fillMaxWidth())
+        }
+    }
 }
 
 // ---------- home ----------
@@ -473,34 +561,36 @@ private fun Home(state: DashState, actions: DashActions, centre: PagerState, ope
     val big = state.bigMap && state.nav.route != null && centre.currentPage == VIEW_MAP && !doors.anyOpen
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            // The dials and the box all end the same distance above the bottom bar
+            // The box and the small gauges end just above the bottom bar; the dials are centred
             Row(
                 Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (!big) RpmDial(r, DIAL)
-                // The box runs from just under the small gauges to just above the bottom bar
-                Box(Modifier.weight(1f).fillMaxHeight().padding(top = GAUGE_TOP + GAUGE + 10.dp)) {
-                    CenterPanel(state, actions, doors, centre, openSearch, wide = big, modifier = Modifier.fillMaxSize())
-                }
-                SpeedDial(r, state.obd.trip.meters, DIAL)
-            }
-            if (big) {
-                // Over the big map: more small gauges rather than wider ones, RPM and coolant among them
-                Row(
-                    Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = GAUGE_TOP).width(1280.dp - DIAL - 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(GAUGE_GAP, Alignment.CenterHorizontally),
+                // The two big dials sit in the middle of the height: the same space above them as below
+                // (the Row's 10 dp at the bottom is made up with half of it here)
+                if (!big) Box(Modifier.align(Alignment.CenterVertically).offset(y = 5.dp)) { RpmDial(r, DIAL) }
+                // The box from just under the divider, the small gauges under it, just above the bottom bar
+                Column(
+                    Modifier.weight(1f).fillMaxHeight().padding(top = GAUGE_TOP),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    RoundGauge(Ic.gauge, "RPM", r.rpm, 0f, 6000f, r.rpm?.let { "${it.toInt()}" }, "rpm", warnAbove = 4500f, diameter = GAUGE)
-                    RoundGauge(Ic.coolant, "Coolant", r.coolantC, 40f, 140f, r.coolantC?.let { "${it.toInt()}" }, "°C", warnAbove = 110f, diameter = GAUGE)
-                    SmallGauges(r)
+                    CenterPanel(state, actions, doors, centre, openSearch, wide = big, modifier = Modifier.weight(1f).fillMaxWidth())
+                    Spacer(Modifier.height(10.dp))
+                    // Wider than the box: reaches out under the edges of the dials, centred
+                    Row(
+                        Modifier.wrapContentWidth(Alignment.CenterHorizontally, unbounded = true),
+                        horizontalArrangement = Arrangement.spacedBy(GAUGE_GAP),
+                    ) {
+                        if (big) {
+                            // With the big map: more small gauges rather than wider ones, RPM and coolant among them
+                            RoundGauge(Ic.gauge, "RPM", r.rpm, 0f, 6000f, r.rpm?.let { "${it.toInt()}" }, "rpm", warnAbove = 4500f, diameter = GAUGE)
+                            RoundGauge(Ic.coolant, "Coolant", r.coolantC, 40f, 140f, r.coolantC?.let { "${it.toInt()}" }, "°C", warnAbove = 110f, diameter = GAUGE)
+                        }
+                        SmallGauges(r)
+                    }
                 }
-            } else {
-                // The small gauges sit high, in the gap above the dials, just under the divider
-                Row(Modifier.align(Alignment.TopCenter).padding(top = GAUGE_TOP), horizontalArrangement = Arrangement.spacedBy(GAUGE_GAP)) {
-                    SmallGauges(r)
-                }
+                Box(Modifier.align(Alignment.CenterVertically).offset(y = 5.dp)) { SpeedDial(r, state.obd.trip.meters, DIAL) }
             }
         }
         BottomBar(state, actions, allApps)
@@ -1256,6 +1346,31 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                             more = { actions.setSpeedWarnKmh(state.speedWarnKmh + Settings.SPEED_WARN_STEP) },
                         )
                         Text("It goes away once you're 5 km/h under again.", color = C.muted, fontSize = 14.sp)
+                    }
+                }
+                Card("Shift up") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Tell me to change up", color = C.ink, fontSize = 17.sp)
+                            Text("\"SHIFT UP\" across the whole screen", color = C.muted, fontSize = 14.sp)
+                        }
+                        Switch(
+                            checked = state.shiftWarnOn,
+                            onCheckedChange = actions.setShiftWarnOn,
+                            colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
+                        )
+                    }
+                    if (state.shiftWarnOn) {
+                        Stepper(
+                            "Over", "${state.shiftWarnRpm} rpm",
+                            less = { actions.setShiftWarnRpm(state.shiftWarnRpm - Settings.SHIFT_WARN_STEP) },
+                            more = { actions.setShiftWarnRpm(state.shiftWarnRpm + Settings.SHIFT_WARN_STEP) },
+                        )
+                        Text(
+                            if (state.topGear > 0f) "Not in top gear: there's no gear left to change up to."
+                            else "Not in top gear, once CarDash has learnt it: drive a minute over 50 km/h in top gear.",
+                            color = C.muted, fontSize = 14.sp,
+                        )
                     }
                 }
                 NavigationCard(state, actions)

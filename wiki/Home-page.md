@@ -18,7 +18,7 @@ The page CarDash opens on, and the one the radio's Home button brings you back t
 
 ## The four small gauges
 
-Oil temperature, boost, intake air and battery voltage. Until the radio's CAN box gives the oil temperature, the first one shows engine load. A gauge turns brighter past its warning level: oil over 130 °C, intake air over 55 °C, battery under 11.8 V.
+Under the middle box: oil temperature, boost, intake air and battery voltage. Until the radio's CAN box gives the oil temperature, the first one shows engine load. A gauge turns brighter past its warning level: oil over 130 °C, intake air over 55 °C, battery under 11.8 V.
 
 ## The box in the middle
 
@@ -27,8 +27,10 @@ Swipe it up or down to change what it shows; the dots on its right edge show whi
 1. **Car info**: this drive and the engine.
    - Bars for the accelerator pedal, engine load, boost and fuel use (L/100 km while moving, L/h standing still)
    - The average fuel use, fuel used, highest boost, distance, average and top speed, highest RPM, the car's range (or the air flow, if the car doesn't give range) and how long you've been driving
-2. **Directions**: on a route, the next turn big, the one after it, when you'll arrive, **End route** and the mute button. While Google Maps navigates, its next turn. Otherwise, **Where to?**.
-3. **3D map**: tilted and turning with the car. On a route, the route and the next turn; without one, the street you're on and **Where to?**.
+2. **Directions**: on a route, the next turn filling the box (the arrow big in the middle, how far and what to do), the one after it, when you'll arrive, **End route** and the mute button. While Google Maps navigates, its next turn the same way. Otherwise, **Where to?**.
+3. **3D map**: tilted and turning with the car, with the speed limit and traffic lights. On a route, the route and the next turn; without one, the street you're on, across the top, and **Where to?**.
+
+![The middle box: car info, directions (CarDash's and Google Maps'), the 3D map](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/middle-box.jpg)
 
 A figure the car doesn't report shows "–". See [Navigation](Navigation) for routes, the big map and saved map areas.
 
@@ -49,6 +51,18 @@ Over whatever view is on: the TT from above, with what's open in the accent colo
 Over the speed set in **Settings › Speed warning** (150 km/h unless you change it), **SLOW THE FUCK DOWN** comes up across the whole screen with your speed under it, and the red above and below pulses twice a second. It goes once you're 5 km/h under the set speed again. The music and app buttons still work while it's showing.
 
 ![The speed warning](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/speed-warning.jpg)
+
+## Shift up
+
+Over the revs set in **Settings › Shift up** (2,500 rpm unless you change it), **SHIFT UP** comes up across the whole screen the same way, with the revs under it. It waits most of a second, so a gear change doesn't flash it, and goes once you're 300 rpm under. It doesn't come up in top gear: CarDash learns top gear the first time you drive steadily in it over 50 km/h for a few seconds, and remembers it. It doesn't come up below 5 km/h either, or while the speed warning is showing.
+
+![Shift up](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/shift-up.jpg)
+
+## Typing
+
+Every box in CarDash (Where to?, the name, the Google key, the service items) uses CarDash's own keyboard, in the app's colours, instead of Android's. Numbers-only boxes get a number pad. **Paste** puts in something you've copied, **?#&** has the symbols, and the red key does what the box is for (**Search**, **Done**).
+
+![Typing in Where to? on CarDash's keyboard](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/keyboard.jpg)
 
 ## A service reminder
 

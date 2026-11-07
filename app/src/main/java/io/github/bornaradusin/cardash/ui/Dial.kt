@@ -30,8 +30,8 @@ private const val START = 135f
 private const val SWEEP = 270f
 
 /**
- * A round dial like a car's: a steel bezel, ticks, numbers, a glowing needle and a lit arc up to
- * the value. [label] turns a major tick's value into its number ("3" for 3,000 rpm). What sits in
+ * A round dial like a car's: a steel bezel, ticks, numbers and a glowing needle (no arc filling up
+ * to it); with [redFrom], a red zone drawn like the TT's own (a thin line along the tick ends). [label] turns a major tick's value into its number ("3" for 3,000 rpm). What sits in
  * the middle is up to the caller. A null [value] parks the needle at zero, dimmed.
  */
 @Composable
@@ -82,8 +82,22 @@ fun Dial(
                 drawArc(color, a0, sweep, false, tl, sz, style = Stroke(width, cap = StrokeCap.Butt))
             }
             arc(0f, max, C.track, r * 0.035f, false)
-            redFrom?.let { arc(it, max, C.red, r * 0.045f, true) }
-            if (value != null) arc(0f, shown, C.red, r * 0.035f, true)
+            redFrom?.let { rf ->
+                // The red zone as on the TT's own rev counter: a thin red line along the ends of the
+                // ticks (they hang off it like a comb), and close-set short dashes just before it
+                val combR = r * 0.88f
+                drawArc(
+                    C.red, START + SWEEP * rf / max, SWEEP * (max - rf) / max, false,
+                    Offset(c.x - combR, c.y - combR), Size(combR * 2, combR * 2), style = Stroke(r * 0.012f, cap = StrokeCap.Butt),
+                )
+                val step = minor / 5f
+                var d = rf - minor + step
+                while (d < rf - 0.001f) {
+                    val a = Math.toRadians((START + SWEEP * d / max).toDouble())
+                    drawLine(C.red.copy(alpha = 0.9f), point(c, a, r * 0.835f), point(c, a, r * 0.875f), r * 0.014f, StrokeCap.Butt)
+                    d += step
+                }
+            }
 
             // Ticks and numbers
             var v = 0f

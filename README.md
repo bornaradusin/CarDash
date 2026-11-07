@@ -3,7 +3,7 @@
 A dashboard and home screen for Android car radios (built for a 1280×720 UIS7862 unit in an Audi TT), with live engine data from a USB ELM327 OBD dongle.
 
 - **Home**: RPM and speed dials, oil, boost, intake air and battery, and a middle box that swipes between this drive's figures, directions and a 3D map; four app buttons and the music that's playing. Open doors, bonnet or boot show on a picture of the car, and a warning fills the screen over the speed you set.
-- **Navigation**: CarDash's own 3D map with place search, routes and spoken directions (OpenStreetMap data, free, no account), saved map areas for no signal, and Google Maps' next turn while it navigates. Eircodes go to Google Maps.
+- **Navigation**: CarDash's own 3D map with place search, routes and spoken directions, speed limits and traffic lights (OpenStreetMap data, free, no account), saved map areas for no signal, and Google Maps' next turn while it navigates. Eircodes with your own free Google key, or found in Google Maps and shared back to CarDash.
 - **Gauges**: every reading the car gives, and the engine's fault codes.
 - **Service**: oil, filters, brake fluid and anything you add, counted down from the car's own odometer (km or months, whichever comes first), with a reminder on Home when one gets close.
 - **Apps**: everything installed on the radio.

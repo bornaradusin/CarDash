@@ -3,6 +3,7 @@ package io.github.bornaradusin.cardash.nav
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import java.io.IOException
 import java.net.URLEncoder
 import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,14 +74,53 @@ class Places(context: Context) {
 
         fun isEircode(q: String) = EIRCODE.matches(q.trim())
 
-        /** Places matching what's typed, nearest to [near] first. */
-        suspend fun search(q: String, near: Pos?): List<Place> {
+        /**
+         * Places matching what's typed, nearest to [near] first. With the driver's own Google key,
+         * Eircodes are looked up with Google, and so is anything the free search doesn't find.
+         */
+        suspend fun search(q: String, near: Pos?, googleKey: String = ""): List<Place> {
+            val key = googleKey.trim()
+            if (key.isNotEmpty() && isEircode(q)) return google(q, key)
+            val free = runCatching { photon(q, near) }
+            val found = free.getOrNull()
+            if (key.isNotEmpty() && found.isNullOrEmpty()) runCatching { google(q, key) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return it }
+            return free.getOrThrow()
+        }
+
+        private suspend fun photon(q: String, near: Pos?): List<Place> {
             val bias = near?.let { String.format(Locale.US, "&lat=%.5f&lon=%.5f", it.lat, it.lon) } ?: ""
             val url = "$PHOTON/api/?q=${URLEncoder.encode(q.trim(), "UTF-8")}&limit=8&lang=en$bias"
             val features = JSONObject(Http.get(url)).optJSONArray("features") ?: return emptyList()
             val out = (0 until features.length()).mapNotNull { place(features.optJSONObject(it)) }
                 .distinctBy { "${it.name}|${it.detail}" }
             return if (near == null) out else out.sortedBy { Geo.distance(near, it.pos) }
+        }
+
+        /**
+         * Google's address lookup (Geocoding), with the driver's own key: knows every Eircode. Free up to
+         * 10,000 lookups a month. A problem with the key comes back as an error with Google's reason.
+         */
+        suspend fun google(q: String, key: String): List<Place> {
+            val eircode = isEircode(q)
+            val clean = if (eircode) q.trim().uppercase(Locale.UK).replace(" ", "").let { it.take(3) + " " + it.drop(3) } else q.trim()
+            val url = "https://maps.googleapis.com/maps/api/geocode/json?address=${URLEncoder.encode(clean, "UTF-8")}" +
+                "&region=ie&language=en" + (if (eircode) "&components=country:IE" else "") + "&key=${URLEncoder.encode(key.trim(), "UTF-8")}"
+            val o = JSONObject(Http.get(url))
+            when (val status = o.optString("status")) {
+                "OK" -> Unit
+                "ZERO_RESULTS" -> return emptyList()
+                else -> throw IOException(o.optString("error_message").ifEmpty { status })
+            }
+            val results = o.optJSONArray("results") ?: return emptyList()
+            return (0 until minOf(results.length(), 5)).mapNotNull { i ->
+                val r = results.optJSONObject(i) ?: return@mapNotNull null
+                val loc = r.optJSONObject("geometry")?.optJSONObject("location") ?: return@mapNotNull null
+                val address = r.optString("formatted_address").removeSuffix(", Ireland")
+                val parts = address.split(", ")
+                val name = if (eircode) clean else parts.first()
+                val detail = if (eircode) address else parts.drop(1).joinToString(", ")
+                Place(name, detail, Pos(loc.getDouble("lat"), loc.getDouble("lng")))
+            }
         }
 
         /** The street at a place, for the map when there's no route. */
@@ -102,6 +142,18 @@ class Places(context: Context) {
             val detail = listOfNotNull(street?.takeIf { it != name }, town?.takeIf { it != name }, s("county")?.takeIf { it != town })
                 .distinct().take(2).joinToString(", ").ifEmpty { s("country") ?: "" }
             return Place(name, detail, Pos(c.getDouble(1), c.getDouble(0)))
+        }
+
+        /**
+         * Google Maps, showing whatever was typed (an Eircode, an address the free search doesn't know),
+         * so it can be shared back: Share → CarDash, and CarDash drives there.
+         */
+        fun findInGoogleMaps(context: Context, q: String) {
+            val show = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(q.trim())))
+                .setPackage(GOOGLE_MAPS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val any = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=" + Uri.encode(q.trim())))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(show) }.onFailure { runCatching { context.startActivity(any) } }
         }
 
         /** Google Maps, navigating to whatever was typed (an Eircode, an address the free search doesn't know). */

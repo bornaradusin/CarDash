@@ -44,6 +44,13 @@ data class NavState(
     val muted: Boolean = false,
     /** The street the car is on, when there's no route. */
     val street: String? = null,
+    /** The speed limit on the road the car is on, km/h, when OpenStreetMap has it. */
+    val limit: Int? = null,
+    /** Traffic lights around the car. */
+    val signals: List<Pos> = emptyList(),
+    /** On a route: the car's place on the route line (GPS is a few metres out), and the route's direction there. */
+    val onRoute: Pos? = null,
+    val routeHeading: Float? = null,
 ) {
     val nextStep: Step? get() = route?.steps?.getOrNull(next)
     val afterStep: Step? get() = route?.steps?.getOrNull(next + 1)
@@ -75,6 +82,9 @@ class Navigator(private val context: Context, private val spokenOn: () -> Boolea
     private var arrivedAt = 0L
     private var streetAt: Pos? = null
     private var streetTime = 0L
+    private var area: RoadArea? = null
+    private var areaJob: Job? = null
+    private var areaTried = 0L
 
     private val listener = object : LocationListener {
         override fun onLocationChanged(l: Location) = onFix(l)
@@ -113,6 +123,26 @@ class Navigator(private val context: Context, private val spokenOn: () -> Boolea
         val heading = if (l.hasBearing() && speed > 1.5f) l.bearing else _state.value.heading
         _state.update { it.copy(here = here, heading = heading, speed = speed, located = true) }
         _state.value.route?.let { follow(it, here, heading, speed) } ?: lookUpStreet(here)
+        roads(here, heading)
+    }
+
+    /** The speed limit here, and traffic lights around; fetches the next area before the car leaves this one. */
+    private fun roads(here: Pos, heading: Float?) {
+        val a = area
+        if (a != null) {
+            val limit = RoadInfo.limitAt(a, here, heading)
+            if (limit != _state.value.limit) _state.update { it.copy(limit = limit) }
+        }
+        val near = a != null && Geo.distance(a.centre, here) < RoadInfo.RADIUS_M - 600
+        val now = System.currentTimeMillis()
+        if (near || areaJob?.isActive == true || now - areaTried < 30_000) return
+        areaTried = now
+        areaJob = scope.launch {
+            runCatching { RoadInfo.around(here) }.onSuccess { fresh ->
+                area = fresh
+                _state.update { it.copy(signals = fresh.signals, limit = RoadInfo.limitAt(fresh, here, heading)) }
+            }
+        }
     }
 
     // ---------- routes ----------
@@ -138,7 +168,7 @@ class Navigator(private val context: Context, private val spokenOn: () -> Boolea
     fun end() {
         planJob?.cancel()
         said.clear()
-        _state.update { it.copy(route = null, destination = null, planning = false, error = null, next = 1) }
+        _state.update { it.copy(route = null, destination = null, planning = false, error = null, next = 1, onRoute = null, routeHeading = null) }
     }
 
     fun toggleMute() {
@@ -210,7 +240,14 @@ class Navigator(private val context: Context, private val spokenOn: () -> Boolea
         val prev = route.steps[next - 1]
         val partOfPrev = if (prev.distance > 0) (toNext / prev.distance).coerceIn(0.0, 1.0) else 0.0
         val leftS = prev.duration * partOfPrev + route.steps.drop(next).sumOf { it.duration }
-        _state.update { it.copy(next = next, toNextM = toNext, leftM = leftM, leftS = leftS) }
+        val snapped = bestD <= 30
+        _state.update {
+            it.copy(
+                next = next, toNextM = toNext, leftM = leftM, leftS = leftS,
+                onRoute = if (snapped) Geo.along(pts[best], pts[best + 1], bestT) else null,
+                routeHeading = if (snapped) Geo.bearing(pts[best], pts[best + 1]).toFloat() else null,
+            )
+        }
 
         announce(next, step, toNext, speed)
         // There: say so, and end the route a little later

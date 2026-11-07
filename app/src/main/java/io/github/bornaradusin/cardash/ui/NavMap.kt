@@ -2,10 +2,19 @@ package io.github.bornaradusin.cardash.ui
 
 import android.graphics.Bitmap
 import android.graphics.Paint
+import android.graphics.PointF
 import android.view.Gravity
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -13,17 +22,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.github.bornaradusin.cardash.R
 import io.github.bornaradusin.cardash.nav.Geo
 import io.github.bornaradusin.cardash.nav.NavState
 import io.github.bornaradusin.cardash.nav.OfflineMaps
@@ -45,6 +58,7 @@ import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
+import org.maplibre.geojson.MultiLineString
 import org.maplibre.geojson.Point
 
 /** What the map needs from outside, kept between recompositions. */
@@ -53,17 +67,46 @@ private class MapHolder {
     var style: Style? = null
     var view: MapView? = null
     var ready by mutableStateOf(false)
+
+    /** The direction of the road at the car, from the last GPS fix. */
+    var roadBearing: Double? = null
+
+    /** How far the car picture is turned so it lines up with the road on screen, in degrees. */
+    var carAngle by mutableStateOf(0f)
+
+    /**
+     * Turns the car to the road as it's drawn under it: a point a few metres up the road, put on the
+     * screen, gives the angle the road runs at there (the tilt and any camera turn still under way
+     * included). Called every frame the map moves.
+     */
+    fun alignCar() {
+        val map = map ?: return
+        val v = view ?: return
+        val brg = roadBearing ?: return
+        if (v.width == 0 || v.height == 0) return
+        val car = PointF(v.width / 2f, v.height * CAR_Y)
+        val under = map.projection.fromScreenLocation(car)
+        val ahead = Geo.offset(Pos(under.latitude, under.longitude), brg, 12.0)
+        val p = map.projection.toScreenLocation(LatLng(ahead.lat, ahead.lon))
+        val dx = p.x - car.x
+        val dy = car.y - p.y
+        if (dx * dx + dy * dy < 4f) return
+        val raw = Math.toDegrees(kotlin.math.atan2(dx, dy).toDouble()).toFloat()
+        // The shortest way round from where it is, so it never spins the long way past 180
+        carAngle += ((raw - carAngle) % 360 + 540) % 360 - 180
+    }
 }
 
 /**
  * The 3D map: tilted, turning with the car, the route in the accent colour and an arrow at the next
- * turn. The car is the arrow drawn on top, a little below the middle, so more of the road ahead shows.
+ * turn. The car is the TT from behind, drawn on top a little below the middle, so more of the road ahead shows.
  */
 @Composable
 fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
     val holder = remember { MapHolder() }
     val accent = C.red
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val px = LocalDensity.current.density
 
     Box(modifier) {
         AndroidView(
@@ -73,12 +116,17 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
                     mv.onCreate(null)
                     mv.getMapAsync { map ->
                         holder.map = map
+                        map.addOnCameraMoveListener { holder.alignCar() }
                         map.uiSettings.apply {
                             setAllGesturesEnabled(false)
                             isCompassEnabled = false
                             isLogoEnabled = false
+                            // The map's credits (OpenStreetMap, OpenFreeMap): a small grey "i" above the
+                            // Where to? button and the arrival times, not blue and half hidden under them
                             isAttributionEnabled = true
                             attributionGravity = Gravity.BOTTOM or Gravity.END
+                            setAttributionTintColor(android.graphics.Color.argb(150, 154, 163, 178))
+                            setAttributionMargins(0, 0, (12 * px).toInt(), (78 * px).toInt())
                         }
                         map.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(LatLng(53.35, -7.9)).zoom(6.0).build()))
                         map.setStyle(Style.Builder().fromUri(OfflineMaps.STYLE)) { style ->
@@ -91,20 +139,20 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
             },
             modifier = Modifier.fillMaxSize(),
         )
-        // The car. This layer also keeps touches off the map view, so swipes and holds reach the middle box
-        Canvas(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }) {
-            if (nav.here == null) return@Canvas
-            val c = Offset(size.width / 2, size.height * CAR_Y)
-            drawCircle(accent.copy(alpha = 0.28f), 26.dp.toPx(), c)
-            val s = 15.dp.toPx()
-            val arrow = Path().apply {
-                moveTo(c.x, c.y - s)
-                lineTo(c.x + s * 0.75f, c.y + s * 0.8f)
-                lineTo(c.x, c.y + s * 0.35f)
-                lineTo(c.x - s * 0.75f, c.y + s * 0.8f)
-                close()
+        // The car, seen from behind, a little below the middle. This layer also keeps touches off the
+        // map view, so swipes and holds reach the middle box
+        BoxWithConstraints(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }) {
+            if (nav.here != null) {
+                val w = 39.dp
+                val h = w * (214f / 256f)
+                // Turned with the road under it; eased, so a new GPS fix on a bend doesn't make it twitch
+                val angle by animateFloatAsState(holder.carAngle, spring(stiffness = Spring.StiffnessMediumLow), label = "car angle")
+                Image(
+                    painterResource(R.drawable.car_marker), "Your car",
+                    modifier = Modifier.align(Alignment.TopCenter).offset(y = maxHeight * CAR_Y - h / 2).width(w).height(h)
+                        .graphicsLayer { rotationZ = angle },
+                )
             }
-            drawPath(arrow, Color.White)
         }
     }
 
@@ -141,6 +189,8 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
     LaunchedEffect(holder.ready, accent) {
         val style = holder.style ?: return@LaunchedEffect
         (style.getLayer(ROUTE) as? LineLayer)?.setProperties(PropertyFactory.lineColor(accent.toArgb()))
+        (style.getLayer(ROUTE_BEHIND) as? LineLayer)?.setProperties(PropertyFactory.lineColor(accent.toArgb()))
+        (style.getLayer(ROUTE_CASE) as? LineLayer)?.setProperties(PropertyFactory.lineColor(C.redDeep.toArgb()))
     }
     LaunchedEffect(holder.ready, nav.route) {
         val style = holder.style ?: return@LaunchedEffect
@@ -167,10 +217,22 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
             head.setGeoJson(f)
         }
     }
+    LaunchedEffect(holder.ready, nav.signals) {
+        val style = holder.style ?: return@LaunchedEffect
+        val src = style.getSourceAs<GeoJsonSource>(SIGNALS_SRC) ?: return@LaunchedEffect
+        src.setGeoJson(FeatureCollection.fromFeatures(nav.signals.map { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) }))
+    }
     LaunchedEffect(holder.ready, nav.here, nav.heading) {
         val map = holder.map ?: return@LaunchedEffect
         val here = nav.here ?: return@LaunchedEffect
         val h = (holder.view?.height ?: 0).toDouble()
+        // The car on the road: on a route, its place on the route line; otherwise the nearest road drawn on the map
+        val onRoute = nav.onRoute?.takeIf { nav.route != null }
+        val road = if (onRoute != null) onRoute to nav.routeHeading else snapToRoad(map, here, nav.heading)
+        val at = road?.first ?: here
+        val heading = road?.second ?: nav.heading ?: map.cameraPosition.bearing.toFloat()
+        holder.roadBearing = heading.toDouble()
+        holder.alignCar()
         // Closer in town, further out on the motorway
         val kmh = nav.speed * 3.6f
         val zoom = when {
@@ -179,8 +241,8 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
             else -> 16.6
         }
         val pos = CameraPosition.Builder()
-            .target(LatLng(here.lat, here.lon))
-            .bearing((nav.heading ?: map.cameraPosition.bearing.toFloat()).toDouble())
+            .target(LatLng(at.lat, at.lon))
+            .bearing(heading.toDouble())
             .tilt(60.0)
             .zoom(zoom)
             .padding(0.0, h * (2 * CAR_Y - 1), 0.0, 0.0)
@@ -189,21 +251,75 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * The nearest road drawn on the map to where the GPS puts the car (it's a few metres out), and that
+ * road's direction the way the car is going. Roads running the car's way win at junctions.
+ */
+private fun snapToRoad(map: MapLibreMap, here: Pos, heading: Float?): Pair<Pos, Float?>? {
+    val pt = map.projection.toScreenLocation(LatLng(here.lat, here.lon))
+    val box = android.graphics.RectF(pt.x - 70f, pt.y - 70f, pt.x + 70f, pt.y + 70f)
+    val features = runCatching { map.queryRenderedFeatures(box, "highway_minor", "highway_major_inner", "highway_motorway_inner") }
+        .getOrNull() ?: return null
+    var bestAt: Pos? = null
+    var bestBearing = 0f
+    var bestScore = Double.MAX_VALUE
+    for (f in features) {
+        val lines = when (val g = f.geometry()) {
+            is LineString -> listOf(g.coordinates())
+            is MultiLineString -> g.coordinates()
+            else -> emptyList()
+        }
+        for (line in lines) {
+            for (i in 0 until line.size - 1) {
+                val a = Pos(line[i].latitude(), line[i].longitude())
+                val b = Pos(line[i + 1].latitude(), line[i + 1].longitude())
+                val (t, d) = Geo.project(here, a, b)
+                if (d > 25) continue
+                var brg = Geo.bearing(a, b).toFloat()
+                var score = d
+                if (heading != null) {
+                    val diff = kotlin.math.abs(((brg - heading) % 360 + 540) % 360 - 180)
+                    if (diff > 90) brg = (brg + 180) % 360
+                    score += minOf(diff, 180 - diff) / 3.0
+                }
+                if (score < bestScore) {
+                    bestScore = score
+                    bestAt = Geo.along(a, b, t)
+                    bestBearing = brg
+                }
+            }
+        }
+    }
+    val at = bestAt ?: return null
+    // Turning, or the road runs another way: keep the car's own heading
+    val keep = heading != null && kotlin.math.abs(((bestBearing - heading) % 360 + 540) % 360 - 180) > 35
+    return at to (if (keep) heading else bestBearing)
+}
+
 /** Where the car sits on the map, from the top. */
 private const val CAR_Y = 0.72f
 
 private const val ROUTE_SRC = "cardash-route"
 private const val ROUTE = "cardash-route"
 private const val ROUTE_CASE = "cardash-route-case"
+private const val ROUTE_BEHIND = "cardash-route-behind"
 private const val TURN_SRC = "cardash-turn"
 private const val HEAD_SRC = "cardash-turn-head"
 private const val ARROW = "cardash-arrow"
+private const val SIGNALS_SRC = "cardash-signals"
+private const val SIGNAL = "cardash-signal"
 
-/** The route, the turn arrow, and buildings raised in 3D, all under the street names. */
+/**
+ * Buildings raised in 3D, the route and the turn arrow. The buildings go above every road and
+ * railway (so they stand on the streets, not under them) and below the names. The route goes under
+ * the buildings, with a half see-through copy over them, so behind a building it shows darker.
+ */
 private fun addLayers(style: Style) {
-    val labels = style.layers.firstOrNull { it is SymbolLayer }?.id
+    val layers = style.layers
+    val lastRoad = layers.indexOfLast { it.id.startsWith("highway") || it.id.startsWith("railway") || it.id.startsWith("road") }
+    val above = layers.getOrNull(lastRoad + 1)?.id
     fun add(layer: org.maplibre.android.style.layers.Layer) {
-        runCatching { if (labels != null) style.addLayerBelow(layer, labels) else style.addLayer(layer) }
+        runCatching { if (above != null) style.addLayerBelow(layer, above) else style.addLayer(layer) }
     }
     runCatching {
         add(
@@ -215,24 +331,67 @@ private fun addLayers(style: Style) {
             ),
         )
     }
+    // Roads lighter than the dark map, with white edges, so they stand out at a glance
+    fun recolour(id: String, colour: String) {
+        (style.getLayer(id) as? LineLayer)?.setProperties(PropertyFactory.lineColor(android.graphics.Color.parseColor(colour)))
+    }
+    recolour("highway_minor", "#4A525F")
+    recolour("highway_major_inner", "#5E6675")
+    recolour("highway_motorway_inner", "#6E7685")
+    recolour("highway_path", "#3A414D")
+    val white = android.graphics.Color.argb(242, 255, 255, 255)
+    listOf("highway_major_casing", "highway_motorway_casing").forEach { id ->
+        (style.getLayer(id) as? LineLayer)?.setProperties(PropertyFactory.lineColor(white))
+    }
+    (style.getLayer("highway_minor") as? LineLayer)?.let { minor ->
+        runCatching {
+            val edge = LineLayer("cardash-minor-edge", "openmaptiles").withSourceLayer("transportation").withProperties(
+                PropertyFactory.lineColor(white),
+                PropertyFactory.lineWidth(
+                    Expression.interpolate(Expression.exponential(1.55f), Expression.zoom(), Expression.stop(13, 3.6f), Expression.stop(20, 23.5f)),
+                ),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+            )
+            minor.filter?.let { edge.setFilter(it) }
+            edge.minZoom = 8f
+            style.addLayerBelow(edge, "highway_minor")
+        }
+    }
     style.addSource(GeoJsonSource(ROUTE_SRC))
     style.addSource(GeoJsonSource(TURN_SRC))
     style.addSource(GeoJsonSource(HEAD_SRC))
-    add(
+    // The route on the street, under the buildings, so a building in front of it covers it
+    fun addUnderBuildings(layer: org.maplibre.android.style.layers.Layer) {
+        runCatching { if (style.getLayer("cardash-3d") != null) style.addLayerBelow(layer, "cardash-3d") else add(layer) }
+    }
+    addUnderBuildings(
         LineLayer(ROUTE_CASE, ROUTE_SRC).withProperties(
-            PropertyFactory.lineColor(android.graphics.Color.parseColor("#5A1B24")),
+            PropertyFactory.lineColor(C.redDeep.toArgb()),
             PropertyFactory.lineWidth(14f),
             PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
             PropertyFactory.lineOpacity(0.6f),
         ),
     )
-    add(
+    addUnderBuildings(
         LineLayer(ROUTE, ROUTE_SRC).withProperties(
             PropertyFactory.lineColor(C.red.toArgb()),
             PropertyFactory.lineWidth(8f),
             PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+        ),
+    )
+    // ...and the same line again over the buildings, half see-through: on the open street it lands on
+    // the red line and changes nothing, behind a building it shows as a darker red on the building,
+    // so the route can still be followed and the building looks in front of it
+    add(
+        LineLayer(ROUTE_BEHIND, ROUTE_SRC).withProperties(
+            PropertyFactory.lineColor(C.red.toArgb()),
+            PropertyFactory.lineWidth(8f),
+            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+            PropertyFactory.lineOpacity(0.5f),
         ),
     )
     // The turn arrow goes over everything
@@ -257,6 +416,45 @@ private fun addLayers(style: Style) {
             ),
         )
     }
+    // Traffic lights, standing up on the map
+    runCatching {
+        style.addSource(GeoJsonSource(SIGNALS_SRC))
+        style.addImage(SIGNAL, trafficLight())
+        val lights = SymbolLayer("cardash-signals", SIGNALS_SRC).withProperties(
+            PropertyFactory.iconImage(SIGNAL),
+            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+            PropertyFactory.iconPitchAlignment(Property.ICON_PITCH_ALIGNMENT_VIEWPORT),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+        )
+        lights.minZoom = 14f
+        style.addLayer(lights)
+    }
+}
+
+/** A small traffic light: red, amber and green in a dark case with a white edge, on a short post. */
+private fun trafficLight(): Bitmap {
+    val d = 2f
+    val b = Bitmap.createBitmap((28 * d).toInt(), (60 * d).toInt(), Bitmap.Config.ARGB_8888)
+    // Drawn at twice the size, shown at the size above
+    b.density = android.util.DisplayMetrics.DENSITY_XHIGH
+    val c = android.graphics.Canvas(b)
+    val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    val box = android.graphics.RectF(3 * d, 2 * d, 25 * d, 54 * d)
+    p.color = android.graphics.Color.parseColor("#15181F")
+    c.drawRoundRect(box, 6 * d, 6 * d, p)
+    p.style = Paint.Style.STROKE
+    p.strokeWidth = 2 * d
+    p.color = android.graphics.Color.parseColor("#EEF2F7")
+    c.drawRoundRect(box, 6 * d, 6 * d, p)
+    p.style = Paint.Style.FILL
+    listOf("#FF3B30" to 13f, "#FFB000" to 28f, "#22C55E" to 43f).forEach { (col, y) ->
+        p.color = android.graphics.Color.parseColor(col)
+        c.drawCircle(14 * d, y * d, 6 * d, p)
+    }
+    p.color = android.graphics.Color.parseColor("#EEF2F7")
+    c.drawRect(13 * d, 54 * d, 15 * d, 60 * d, p)
+    return b
 }
 
 /** A white arrow head, pointing up (north) before it's turned. */

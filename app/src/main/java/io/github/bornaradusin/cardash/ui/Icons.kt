@@ -62,6 +62,11 @@ object Ic {
     val clock = icon("clock", circle(12f, 12f, 9f), "M12 7v5l3 2")
     val download = icon("download", "M12 4v10", "M8 10l4 4 4-4", "M5 19h14")
 
+    // The keyboard
+    val backspace = icon("backspace", "M9 5h11a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-6-7z", "M12 9.5l5 5", "M17 9.5l-5 5")
+    val shift = icon("shift", "M12 4l8 8h-4.5v7h-7v-7H4z")
+    val hideKeys = icon("hideKeys", "M4 5h16v10H4z", "M7 8h.01", "M10 8h.01", "M13 8h.01", "M16 8h.01", "M8 12h8", "M9 18l3 3 3-3")
+
     // Service
     val wrench = icon("wrench", "M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z")
     val drop = icon("drop", "M12 3s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11z")

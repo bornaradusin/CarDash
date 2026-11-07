@@ -48,6 +48,10 @@ class ObdLink(private val context: Context) {
     private var pedalMin = 100f
     private var pedalMax = 80f
     @Volatile private var scanRequested = false
+    /** CAN cars: each question ends with "1", so the dongle answers as soon as the engine has (no waiting for others). */
+    private var oneAnswer = false
+    /** CAN cars that take several readings in one question (up to what fits one CAN frame). */
+    private var together = false
 
     private val _state = MutableStateFlow(ObdState())
     val state: StateFlow<ObdState> = _state
@@ -135,7 +139,8 @@ class ObdLink(private val context: Context) {
                 }
             if (name == null) continue
             log("Dongle found at $baud baud: $name")
-            listOf("ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP0").forEach { elm.send(it) }
+            // ATAT2: the dongle's quickest timing, learnt from how fast the car answers
+            listOf("ATE0", "ATL0", "ATS0", "ATH0", "ATAT2", "ATSP0").forEach { elm.send(it) }
             _state.update { it.copy(adapter = name, baud = baud) }
             return elm
         }
@@ -154,6 +159,7 @@ class ObdLink(private val context: Context) {
         val slow = intArrayOf(Pids.MAP, Pids.MAF, Pids.LOAD, Pids.COOLANT, Pids.MAP, Pids.MAF, Pids.LOAD, Pids.INTAKE, Pids.FUEL_RATE, Pids.OIL, Pids.BARO, Pids.AMBIENT, VOLTS)
         val misses = mutableMapOf<Int, Int>()
         var next = 0
+        var round = 0
         var silent = 0
         var count = 0
         var since = System.currentTimeMillis()
@@ -162,29 +168,50 @@ class ObdLink(private val context: Context) {
         while (coroutineContext.isActive) {
             var r = _state.value.readings.copy(fuelFactor = fuelFactor, dieselLph = null)
             var answered = false
-            for (pid in intArrayOf(Pids.RPM, Pids.SPEED, Pids.PEDAL)) {
-                // The pedal is skipped on cars that don't report it
-                if (pid == Pids.PEDAL && (misses[pid] ?: 0) >= 3) continue
-                val v = read(elm, pid)
-                if (v != null) {
-                    answered = true
-                    r = set(r, pid, v)
-                    count++
-                    misses[pid] = 0
-                } else if (pid == Pids.PEDAL) misses[pid] = (misses[pid] ?: 0) + 1
-            }
-            // One of the slower readings each round, skipping ones the car keeps not answering
-            for (attempt in slow.indices) {
-                val pid = slow[next]
-                next = (next + 1) % slow.size
-                if ((misses[pid] ?: 0) >= 3) continue
-                val v = if (pid == VOLTS) Pids.volts(elm.send("ATRV")) else read(elm, pid)
-                if (v == null) misses[pid] = (misses[pid] ?: 0) + 1 else {
-                    misses[pid] = 0
-                    r = set(r, pid, v)
-                    count++
+            if (together) {
+                // RPM and speed every round in one question; then one group of the rest, in turn
+                val main = askTogether(elm, intArrayOf(Pids.RPM, Pids.SPEED))
+                main.forEach { (pid, v) -> r = set(r, pid, v); count++ }
+                answered = main.isNotEmpty()
+                val group = GROUPS[round % GROUPS.size].filter { (misses[it] ?: 0) < 3 }.toIntArray()
+                round++
+                if (group.isNotEmpty()) {
+                    val got = askTogether(elm, group)
+                    group.forEach { pid ->
+                        val v = got[pid]
+                        if (v == null) misses[pid] = (misses[pid] ?: 0) + 1 else {
+                            misses[pid] = 0
+                            r = set(r, pid, v)
+                            count++
+                        }
+                    }
                 }
-                break
+                if (round % 12 == 0) Pids.volts(elm.send("ATRV"))?.let { r = set(r, VOLTS, it); count++ }
+            } else {
+                for (pid in intArrayOf(Pids.RPM, Pids.SPEED, Pids.PEDAL)) {
+                    // The pedal is skipped on cars that don't report it
+                    if (pid == Pids.PEDAL && (misses[pid] ?: 0) >= 3) continue
+                    val v = read(elm, pid)
+                    if (v != null) {
+                        answered = true
+                        r = set(r, pid, v)
+                        count++
+                        misses[pid] = 0
+                    } else if (pid == Pids.PEDAL) misses[pid] = (misses[pid] ?: 0) + 1
+                }
+                // One of the slower readings each round, skipping ones the car keeps not answering
+                for (attempt in slow.indices) {
+                    val pid = slow[next]
+                    next = (next + 1) % slow.size
+                    if ((misses[pid] ?: 0) >= 3) continue
+                    val v = if (pid == VOLTS) Pids.volts(elm.send("ATRV")) else read(elm, pid)
+                    if (v == null) misses[pid] = (misses[pid] ?: 0) + 1 else {
+                        misses[pid] = 0
+                        r = set(r, pid, v)
+                        count++
+                    }
+                    break
+                }
             }
             if (System.currentTimeMillis() - lastMil > 30_000) {
                 lastMil = System.currentTimeMillis()
@@ -258,6 +285,17 @@ class ObdLink(private val context: Context) {
             if (Pids.data(answer, 0x00) != null) {
                 val protocol = elm.send("ATDP").lines().map { it.trim() }.firstOrNull { it.isNotEmpty() }
                 _state.update { it.copy(link = Link.CONNECTED, protocol = protocol) }
+                // Faster reading where the car and the dongle can do it (CAN cars, like Torque's "faster communication")
+                val can = protocol?.let { it.contains("CAN", ignoreCase = true) || it.contains("15765") } == true
+                oneAnswer = can && Pids.data(elm.send("010C1"), Pids.RPM) != null
+                together = oneAnswer && Pids.multi(elm.send("010C0D1")).let { Pids.RPM in it && Pids.SPEED in it }
+                log(
+                    when {
+                        together -> "Fast reading on: several readings per question"
+                        oneAnswer -> "Fast reading on: one answer per question"
+                        else -> "Fast reading off: the car or the dongle doesn't do it"
+                    },
+                )
                 if (_state.value.faults == null) scanFaults()
                 return true
             }
@@ -269,7 +307,13 @@ class ObdLink(private val context: Context) {
     }
 
     private fun read(elm: Elm327, pid: Int): Float? =
-        Pids.data(elm.send("01%02X".format(pid)), pid)?.let { Pids.value(pid, it) }
+        Pids.data(elm.send("01%02X".format(pid) + if (oneAnswer) "1" else ""), pid)?.let { Pids.value(pid, it) }
+
+    /** Several readings in one question (CAN cars); only the ones the car answered come back. */
+    private fun askTogether(elm: Elm327, pids: IntArray): Map<Int, Float> {
+        val got = Pids.multi(elm.send("01" + pids.joinToString("") { "%02X".format(it) } + "1"))
+        return got.mapNotNull { (pid, d) -> Pids.value(pid, d)?.let { pid to it } }.toMap()
+    }
 
     private fun set(r: Readings, pid: Int, v: Float): Readings = when (pid) {
         Pids.RPM -> r.copy(rpm = v)
@@ -318,5 +362,20 @@ class ObdLink(private val context: Context) {
 
         /** Not a PID: the dongle's own voltage reading (ATRV). */
         private const val VOLTS = -1
+
+        /**
+         * With several readings per question: the second question of each round, in turn. Each fits one
+         * CAN frame; pedal, boost and load come round most often, as they change fastest.
+         */
+        private val GROUPS = listOf(
+            intArrayOf(Pids.PEDAL, Pids.MAP, Pids.LOAD),
+            intArrayOf(Pids.MAF, Pids.MAP),
+            intArrayOf(Pids.PEDAL, Pids.MAP, Pids.LOAD),
+            intArrayOf(Pids.COOLANT, Pids.INTAKE, Pids.BARO),
+            intArrayOf(Pids.PEDAL, Pids.MAP, Pids.LOAD),
+            intArrayOf(Pids.MAF, Pids.FUEL_RATE),
+            intArrayOf(Pids.PEDAL, Pids.MAP, Pids.LOAD),
+            intArrayOf(Pids.OIL, Pids.AMBIENT),
+        )
     }
 }
