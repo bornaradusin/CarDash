@@ -387,13 +387,11 @@ private fun SpeedDial(r: Readings, tripMeters: Double, size: Dp) {
             Modifier.size(size * 0.41f).clip(CircleShape).background(Color(0xFF0A0C10)).border(2.dp, C.line, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    r.speedKmh?.toInt()?.toString() ?: "–",
-                    color = C.ink, fontSize = (size.value * 0.17f).sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
-                )
-                Text("km/h", color = C.muted, fontSize = (size.value * 0.038f).sp)
-            }
+            // Just the number, in the middle of the circle
+            Text(
+                r.speedKmh?.toInt()?.toString() ?: "–",
+                color = C.ink, fontSize = (size.value * 0.17f).sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
+            )
         }
         // The odometer from the radio's CAN box once that's read; until then, this drive's distance
         Text(
