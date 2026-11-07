@@ -6,7 +6,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// The signing key comes from the build (GitHub Actions secrets), never from the repository.
+// The signing key comes from the build (GitHub Actions secrets), never from the repository:
+// every release is signed with the same key, so updates install over each other.
 val keystorePath: String? = System.getenv("CARDASH_KEYSTORE")
 
 android {
