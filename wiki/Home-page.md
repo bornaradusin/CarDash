@@ -50,13 +50,13 @@ Over whatever view is on: the TT from above, with what's open in the accent colo
 
 Over the speed set in **Settings › Speed warning** (150 km/h unless you change it), **SLOW THE FUCK DOWN** comes up across the whole screen with your speed under it, and the red above and below pulses twice a second. It goes once you're 5 km/h under the set speed again. The music and app buttons still work while it's showing.
 
-![The speed warning](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/speed-warning.jpg)
+![The speed warning: driving from 145 to 200 km/h](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/speed-warning.gif)
 
 ## Shift up
 
 Over the revs set in **Settings › Shift up** (2,500 rpm unless you change it), **SHIFT UP** comes up across the whole screen the same way, with the revs under it. It waits most of a second, so a gear change doesn't flash it, and goes once you're 300 rpm under. It doesn't come up in top gear: CarDash learns top gear the first time you drive steadily in it over 50 km/h for a few seconds, and remembers it. It doesn't come up below 5 km/h either, or while the speed warning is showing.
 
-![Shift up](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/shift-up.jpg)
+![Shift up: the revs climb past 2,500, then the change up takes it away](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/shift-up.gif)
 
 ## Typing
 
