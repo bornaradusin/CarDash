@@ -89,6 +89,8 @@ data class DashState(
     val icons: List<String>,
     /** Waze's last notification, word for word, for Settings. */
     val lastWaze: String?,
+    /** The chosen music player; null = YouTube Music. */
+    val musicApp: String?,
     val hasNotifications: Boolean,
     val fullScreen: Boolean,
 )
@@ -103,6 +105,7 @@ class DashActions(
     val scanFaults: () -> Unit,
     val askUsbAgain: () -> Unit,
     val setIcon: (Int, String) -> Unit,
+    val setMusicApp: (String) -> Unit,
     val allowNotifications: () -> Unit,
     val chooseHome: () -> Unit,
     val setName: (String) -> Unit,
@@ -391,10 +394,18 @@ private fun AppPicker(apps: List<AppEntry>, onPick: (String) -> Unit, onDismiss:
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MusicBar(state: DashState, actions: DashActions) {
     val now = state.now
     var tick by remember { mutableLongStateOf(0L) }
+    var choosing by remember { mutableStateOf(false) }
+    val player = remember(state.musicApp, state.apps) {
+        (state.musicApp?.let { pkg -> state.apps.firstOrNull { it.pkg == pkg } } ?: Apps.defaultFor(2, state.apps))?.label
+    }
+    if (choosing) {
+        AppPicker(state.apps, onPick = { actions.setMusicApp(it); choosing = false }, onDismiss = { choosing = false })
+    }
     LaunchedEffect(now?.playing) {
         while (now?.playing == true) {
             tick++
@@ -417,7 +428,7 @@ private fun MusicBar(state: DashState, actions: DashActions) {
             if (art != null) Image(art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Icon(Ic.music, null, tint = C.muted, modifier = Modifier.size(26.dp))
         }
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).combinedClickable(onClick = {}, onLongClick = { choosing = true })) {
             when {
                 !state.hasNotifications -> {
                     Text("Music controls need notification access", color = C.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
@@ -425,7 +436,10 @@ private fun MusicBar(state: DashState, actions: DashActions) {
                 }
                 now == null -> {
                     Text("Nothing playing", color = C.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Start music in any app and it shows here", color = C.muted, fontSize = 14.sp)
+                    Text(
+                        "Play starts ${player ?: "your music app"} · hold here to choose another",
+                        color = C.muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 else -> {
                     Text(
@@ -447,13 +461,14 @@ private fun MusicBar(state: DashState, actions: DashActions) {
             }
         }
         RoundButton(Ic.previous, "Previous", 60.dp, now != null, actions.previous)
+        // Play works with nothing playing too: it starts the music app
         Box(
             Modifier
                 .size(66.dp)
                 .clip(CircleShape)
                 .background(C.redTint)
                 .border(2.dp, C.red, CircleShape)
-                .clickable(enabled = now != null, onClick = actions.playPause),
+                .clickable(onClick = actions.playPause),
             contentAlignment = Alignment.Center,
         ) {
             Icon(if (now?.playing == true) Ic.pause else Ic.play, if (now?.playing == true) "Pause" else "Play", tint = C.ink, modifier = Modifier.size(26.dp))
@@ -837,6 +852,14 @@ private fun SettingsScreen(state: DashState, actions: DashActions) {
             }
             Card("Permissions") {
                 Permission("Notification access", "Waze's next turn, and music controls", state.hasNotifications, actions.allowNotifications)
+            }
+            Card("Music") {
+                val player = (state.musicApp?.let { pkg -> state.apps.firstOrNull { it.pkg == pkg } } ?: Apps.defaultFor(2, state.apps))?.label
+                Text("Music player: ${player ?: "none found"}", color = C.ink, fontSize = 17.sp)
+                Text("Play on Home starts it when nothing is playing", color = C.muted, fontSize = 14.sp)
+                var choosing by remember { mutableStateOf(false) }
+                Wide("Choose the music app") { choosing = true }
+                if (choosing) AppPicker(state.apps, onPick = { actions.setMusicApp(it); choosing = false }, onDismiss = { choosing = false })
             }
             Card("Waze") {
                 Text(

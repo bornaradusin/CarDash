@@ -50,6 +50,10 @@ class MainActivity : ComponentActivity() {
             scanFaults = { app.obd.scanFaults() },
             askUsbAgain = { app.obd.askAgain() },
             setIcon = { i, key -> app.settings.setIcon(i, key) },
+            setMusicApp = {
+                app.settings.setMusicApp(it)
+                media.preferred = it
+            },
             allowNotifications = {
                 startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             },
@@ -73,6 +77,7 @@ class MainActivity : ComponentActivity() {
             val fullScreen by app.settings.fullScreen.collectAsState()
             val icons by app.settings.icons.collectAsState()
             val lastWaze by CarNotifications.lastWaze.collectAsState()
+            val musicApp by app.settings.musicApp.collectAsState()
             var apps by remember { mutableStateOf(emptyList<io.github.bornaradusin.cardash.car.AppEntry>()) }
             LaunchedEffect(resumes) {
                 apps = withContext(Dispatchers.IO) { Apps.all(this@MainActivity) }
@@ -86,6 +91,7 @@ class MainActivity : ComponentActivity() {
                 slots = slots,
                 icons = icons,
                 lastWaze = lastWaze,
+                musicApp = musicApp,
                 hasNotifications = remember(resumes) { CarNotifications.allowed(this@MainActivity) },
                 fullScreen = fullScreen,
             )
@@ -97,6 +103,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         resumes++
         app.obd.start()
+        media.preferred = musicApp()
         media.start()
         applyFullScreen(app.settings.fullScreen.value)
     }
@@ -116,10 +123,10 @@ class MainActivity : ComponentActivity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() = Unit
 
-    /** The app Play starts when nothing is playing: the YouTube Music button's app. */
+    /** The app Play starts when nothing is playing: the one chosen in Settings, else YouTube Music. */
     private fun musicApp(): String? {
         val installed = Apps.all(this)
-        val chosen = app.settings.slots.value.getOrNull(2)?.takeIf { pkg -> installed.any { it.pkg == pkg } }
+        val chosen = app.settings.musicApp.value?.takeIf { pkg -> installed.any { it.pkg == pkg } }
         return chosen ?: Apps.defaultFor(2, installed)?.pkg
     }
 

@@ -36,6 +36,15 @@ class Settings(context: Context) {
         _icons.value = _icons.value.toMutableList().also { it[i] = key }
     }
 
+    private val _musicApp = MutableStateFlow(sp.getString("musicApp", null))
+    /** The music player Play starts, and whose music the bar prefers; null = YouTube Music. */
+    val musicApp: StateFlow<String?> = _musicApp
+
+    fun setMusicApp(pkg: String) {
+        sp.edit().putString("musicApp", pkg).apply()
+        _musicApp.value = pkg
+    }
+
     private val _fullScreen = MutableStateFlow(sp.getBoolean("fullScreen", true))
     /** Hides the radio's own bars (a swipe from the edge brings them back). */
     val fullScreen: StateFlow<Boolean> = _fullScreen

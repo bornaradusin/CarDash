@@ -45,6 +45,13 @@ class Media(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var controller: MediaController? = null
 
+    /** The person's music player: shown first when nothing is playing. */
+    var preferred: String? = null
+        set(v) {
+            field = v
+            if (listening) pick()
+        }
+
     private val _now = MutableStateFlow<NowPlaying?>(null)
     val now: StateFlow<NowPlaying?> = _now
 
@@ -134,7 +141,9 @@ class Media(private val context: Context) {
     /** The app to show: the one playing, else the most recent one. */
     private fun pick() {
         val sessions = runCatching { manager.getActiveSessions(CarNotifications.component(context)) }.getOrNull().orEmpty()
-        val best = sessions.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING } ?: sessions.firstOrNull()
+        val best = sessions.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
+            ?: sessions.firstOrNull { it.packageName == preferred }
+            ?: sessions.firstOrNull()
         if (best?.sessionToken != controller?.sessionToken) {
             controller?.unregisterCallback(callback)
             controller = best
