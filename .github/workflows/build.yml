@@ -6,8 +6,6 @@
 # Optional repository secrets (Settings → Secrets and variables → Actions):
 #   ANDROID_KEYSTORE_PASSWORD  opens signing/cardash.jks.enc (the signing key, encrypted with it),
 #                              so each APK installs over the last
-#   ANDROID_KEY_ALIAS          its alias (cardash if not set)
-#   ANDROID_KEY_PASSWORD       the key's password, if it differs from the keystore's
 name: Build
 
 on:
@@ -53,10 +51,14 @@ jobs:
         env:
           PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
+          # Spaces or line breaks picked up when the secret was pasted don't count
+          PASSWORD=$(printf '%s' "$PASSWORD" | tr -d ' \t\r\n')
           if [ -n "$PASSWORD" ] && [ -f signing/cardash.jks.enc ]; then
             if openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in signing/cardash.jks.enc -out "$RUNNER_TEMP/cardash.jks" -pass env:PASSWORD \
               && keytool -list -keystore "$RUNNER_TEMP/cardash.jks" -storepass "$PASSWORD" > /dev/null 2>&1; then
+              echo "::add-mask::$PASSWORD"
               echo "CARDASH_KEYSTORE=$RUNNER_TEMP/cardash.jks" >> "$GITHUB_ENV"
+              echo "CARDASH_KEYSTORE_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
               echo "Signing key OK"
             else
               echo "::error::ANDROID_KEYSTORE_PASSWORD doesn't open signing/cardash.jks.enc: check the secret has exactly the password, nothing else."
@@ -65,10 +67,6 @@ jobs:
           fi
 
       - name: Build the APK
-        env:
-          CARDASH_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          CARDASH_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          CARDASH_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           VERSION=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -1)
@@ -77,7 +75,7 @@ jobs:
             ./gradlew --no-daemon assembleRelease
             cp app/build/outputs/apk/release/app-release.apk "CarDash-$VERSION.apk"
           else
-            echo "::warning::No signing key set: this is a debug build. Set ANDROID_KEYSTORE_BASE64 so updates install over it."
+            echo "::warning::No signing key set: this is a debug build. Set ANDROID_KEYSTORE_PASSWORD so updates install over it."
             ./gradlew --no-daemon assembleDebug
             cp app/build/outputs/apk/debug/app-debug.apk "CarDash-$VERSION-debug.apk"
           fi
