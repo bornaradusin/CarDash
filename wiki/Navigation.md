@@ -9,7 +9,7 @@ Hold the middle box on Home, on any of its views, or tap **Where to?** on the ma
 - **Saved**: Home and Work. **Hold** any place (a result or a recent one) to save it as Home or Work.
 - **Recent**: the last places you drove to. Hold one to remove it.
 
-![Where to?](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/where-to.jpg)
+![Where to?](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/where-to.gif)
 
 ### Eircodes and places the search doesn't know
 
@@ -18,9 +18,9 @@ CarDash's own search (the free OpenStreetMap search) doesn't know Eircodes. Ther
 - **Share from Google Maps (no setup).** Type the Eircode, or anything the search can't find, and tap **Find it in Google Maps**. Google Maps opens on the place: tap **Share**, then **CarDash**. CarDash comes back, finds where the place is and starts the route straight away. This works from anywhere in Google Maps (a place, a dropped pin, a directions screen), and "Open in maps" from other apps (a location in a message, an address in a contact) can open CarDash too.
 - **Your own Google key (Eircodes found right in CarDash).** Add a key in **Settings › Navigation › Google key for Eircodes** and Eircodes come up in CarDash's search like any other place. See [Getting a Google key](#getting-a-google-key) below.
 
-![An Eircode with no key: find it in Google Maps, then Share › CarDash](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/eircode-google-maps.jpg)
+![An Eircode with no key: find it in Google Maps, then Share › CarDash](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/eircode-google-maps.gif)
 
-![An Eircode with your own Google key: found right in CarDash](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/eircode-google-key.jpg)
+![An Eircode with your own Google key: found right in CarDash](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/eircode-google-key.gif)
 
 Or tap **Or let Google Maps drive**: Google Maps opens and starts the route itself. Come back to CarDash any time: the middle box shows Google's next turn.
 
@@ -34,7 +34,7 @@ Free for anything you'll use it for: Google gives 10,000 address lookups a month
 4. Under API restrictions, pick **Geocoding API** only, and save. (If Google says the Geocoding API isn't turned on, open the **API Library**, find **Geocoding API** and click **Enable**.)
 5. Copy the key (it starts with AIza) and paste it into **Settings › Navigation › Google key for Eircodes** in CarDash. CarDash tries it once before keeping it and shows Google's reason if it doesn't work.
 
-![Settings › Navigation: Google key for Eircodes](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/google-key-setting.jpg)
+![Settings › Navigation: Google key for Eircodes](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/google-key-setting.gif)
 
 To be sure it never costs anything, set the Geocoding API's daily limit to a few hundred under **APIs & Services › Geocoding API › Quotas**.
 
@@ -42,7 +42,7 @@ To be sure it never costs anything, set the Geocoding API's daily limit to a few
 
 The middle box switches to the map, tilted and turning with the car, the route in the accent colour and an arrow at the next turn. On top: the next turn and how far. Underneath: when you'll arrive, the time left and the distance to go.
 
-![Home on a route, with the 3D map in the middle box](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/map.jpg)
+![Home on a route, with the 3D map in the middle box](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/map.gif)
 
 Swipe the middle box down to **Directions** for the next turn big, the one after it, and **End route**.
 
@@ -54,7 +54,7 @@ Swipe the middle box down to **Directions** for the next turn big, the one after
 
 With **Settings › Navigation › Big map on a route** on, the map takes the RPM dial's place while you're on a route and the map is showing. Under it, six small gauges instead of four: RPM and coolant join oil, boost, intake air and battery. Swipe the middle box to another view, or end the route, and Home goes back to normal.
 
-![The big map on a route](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/big-map.jpg)
+![The big map on a route](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/big-map.gif)
 
 ## Speed limits and traffic lights
 
@@ -70,7 +70,7 @@ Navigating in the Google Maps app instead? Its next turn fills the middle box's 
 
 **Settings › Offline map** keeps map areas on the radio for driving without signal:
 
-![Settings: the offline map card](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/offline-map.jpg)
+![Settings: the offline map card](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/offline-map.gif)
 
 - **Around here**: everything within 50 km (needs a GPS position).
 - **All of Ireland**: the whole island, down to street level. A big download.

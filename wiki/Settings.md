@@ -1,6 +1,6 @@
 Open Settings from the gear, top right. The back arrow, or the radio's Home button, closes them.
 
-![Settings](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/settings.jpg)
+![Settings](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/settings.gif)
 
 | Card | What's there |
 |---|---|

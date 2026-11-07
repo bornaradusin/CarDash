@@ -1,6 +1,6 @@
 The page CarDash opens on, and the one the radio's Home button brings you back to.
 
-![Home](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/home.jpg)
+![Home](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/home.gif)
 
 ## Across the top
 
@@ -30,7 +30,7 @@ Swipe it up or down to change what it shows; the dots on its right edge show whi
 2. **Directions**: on a route, the next turn filling the box (the arrow big in the middle, how far and what to do), the one after it, when you'll arrive, **End route** and the mute button. While Google Maps navigates, its next turn the same way. Otherwise, **Where to?**.
 3. **3D map**: tilted and turning with the car, with the speed limit and traffic lights. On a route, the route and the next turn; without one, the street you're on, across the top, and **Where to?**.
 
-![The middle box: car info, directions (CarDash's and Google Maps'), the 3D map](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/middle-box.jpg)
+![The middle box: car info, directions (CarDash's and Google Maps'), the 3D map](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/middle-box.gif)
 
 A figure the car doesn't report shows "–". See [Navigation](Navigation) for routes, the big map and saved map areas.
 
@@ -38,7 +38,7 @@ A figure the car doesn't report shows "–". See [Navigation](Navigation) for ro
 
 Over whatever view is on: the TT from above, with what's open in the accent colour, and what's open in words ("Right door open").
 
-![The right door open](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/door-open.jpg)
+![The right door open](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/door-open.gif)
 
 ## Along the bottom
 
@@ -62,7 +62,7 @@ Over the revs set in **Settings › Shift up** (2,500 rpm unless you change it),
 
 Every box in CarDash (Where to?, the name, the Google key, the service items) uses CarDash's own keyboard, in the app's colours, instead of Android's. Numbers-only boxes get a number pad. **Paste** puts in something you've copied, **?#&** has the symbols, and the red key does what the box is for (**Search**, **Done**).
 
-![Typing in Where to? on CarDash's keyboard](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/keyboard.jpg)
+![Typing in Where to? on CarDash's keyboard](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/where-to.gif)
 
 ## A service reminder
 

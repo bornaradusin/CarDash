@@ -1,6 +1,6 @@
 The **Service** page keeps track of the car's maintenance: oil, filters, brake fluid and anything you add. Each item counts down from the **car's own odometer**, by kilometres, months, or both, whichever comes first. It's the fourth page: swipe left from Home past Gauges.
 
-![The Service page](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/service.jpg)
+![The Service page](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/service.gif)
 
 ## The car's odometer
 
@@ -9,7 +9,7 @@ Everything counts down from the kilometres the car's dashboard shows.
 - **From the CAN box**: on radios with a CAN box (like the one in the TT), CarDash reads the odometer straight from the car. The card says *From the car, live (CAN box)*. If your radio's CAN box puts the odometer somewhere else, pick it in [Settings › Radio's CAN box](Radios-CAN-box).
 - **Without one**: type in what the dashboard shows and tap **Save**. CarDash then adds the distance it works out from the OBD speed as you drive. That drifts a little over time, so type the dashboard reading in again now and then.
 
-![The odometer card, typed in](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/service-odometer.jpg)
+![The odometer card, typed in](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/service-odometer.gif)
 
 ## The items
 
@@ -44,7 +44,7 @@ Tap the item (or the pencil with its interval) to open it. You can change:
 
 The box underneath shows when it's next due and how far off that is, as you type. **Save** keeps the changes.
 
-![Changing an item](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/service-item.jpg)
+![Changing an item](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/service-item.gif)
 
 ## Done
 
@@ -58,7 +58,7 @@ Tap **Done** on an item, or **Done today** inside it, when you've had it done. I
 
 When an item is within **1,000 km** or **30 days** of being due (or is overdue), a reminder pops up on Home listing what needs doing:
 
-![The service reminder on Home](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/service-reminder.jpg)
+![The service reminder on Home](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/service-reminder.gif)
 
 - **Done** next to an item logs it as done now.
 - **Remind me later** hides the reminder until the next drive.
