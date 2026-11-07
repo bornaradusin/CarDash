@@ -653,7 +653,7 @@ private fun DrivePanel(obd: ObdState, rangeKm: Float?) {
 private fun Bar(name: String, value: Float?, max: Float, number: String?, unit: String) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row {
-            Text(name, color = C.ink2, fontSize = 16.sp, maxLines = 1, modifier = Modifier.weight(1f).alignByBaseline())
+            Text(name, color = C.ink2, fontSize = 19.sp, maxLines = 1, modifier = Modifier.weight(1f).alignByBaseline())
             Text(
                 number ?: "–", color = if (number == null) C.muted else C.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold,
                 fontStyle = FontStyle.Italic, maxLines = 1, modifier = Modifier.alignByBaseline(),
@@ -670,7 +670,7 @@ private fun Bar(name: String, value: Float?, max: Float, number: String?, unit: 
 @Composable
 private fun Stat(name: String, value: String?, unit: String, modifier: Modifier = Modifier) {
     Column(modifier) {
-        Text(name, color = C.muted, fontSize = 14.sp, maxLines = 1)
+        Text(name, color = C.muted, fontSize = 17.sp, maxLines = 1)
         Row {
             Text(
                 value ?: "–", color = if (value == null) C.muted else C.ink, fontSize = 28.sp, fontWeight = FontWeight.SemiBold,
