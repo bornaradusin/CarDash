@@ -16,5 +16,8 @@ class CarDashApp : Application() {
     override fun onCreate() {
         super.onCreate()
         obd.fuelFactor = settings.fuelFactor.value
+        obd.diesel = settings.diesel.value
+        obd.dieselQ0 = settings.dieselQ0
+        obd.dieselQ1 = settings.dieselQ1
     }
 }

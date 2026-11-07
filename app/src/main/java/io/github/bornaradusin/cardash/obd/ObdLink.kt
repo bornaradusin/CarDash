@@ -35,6 +35,16 @@ class ObdLink(private val context: Context) {
     private var asked = false
     /** Set from Settings: matches the air-flow fuel figure to the car's. */
     @Volatile var fuelFactor = 1f
+
+    /**
+     * Diesel: fuel per injection in mg = [dieselQ0] + [dieselQ1] × engine load %. A diesel's air
+     * doesn't follow its fuel (it runs lean, leaner still at idle), but what's injected follows the
+     * load. Starting values are for a 2.0 TDI (about 57 mg flat out, 6 mg at idle); matching to
+     * the car at idle sets Q0, over a drive Q1.
+     */
+    @Volatile var diesel = false
+    @Volatile var dieselQ0 = DIESEL_Q0
+    @Volatile var dieselQ1 = DIESEL_Q1
     private var pedalMin = 100f
     private var pedalMax = 80f
     @Volatile private var scanRequested = false
@@ -150,7 +160,7 @@ class ObdLink(private val context: Context) {
         var lastMil = 0L
         var lastRound = System.currentTimeMillis()
         while (coroutineContext.isActive) {
-            var r = _state.value.readings.copy(fuelFactor = fuelFactor)
+            var r = _state.value.readings.copy(fuelFactor = fuelFactor, dieselLph = null)
             var answered = false
             for (pid in intArrayOf(Pids.RPM, Pids.SPEED, Pids.PEDAL)) {
                 // The pedal is skipped on cars that don't report it
@@ -194,6 +204,14 @@ class ObdLink(private val context: Context) {
             val dt = (now - lastRound).coerceIn(0, 5_000)
             lastRound = now
             val kmh = r.speedKmh
+            // Diesel fuel from load and RPM: 4 cylinders, one injection each per 2 turns
+            val rpmNow = r.rpm
+            val loadNow = r.loadPct
+            if (diesel && rpmNow != null && loadNow != null) {
+                val mg = (dieselQ0 + dieselQ1 * loadNow).coerceAtLeast(0f)
+                val gPerS = rpmNow / 30f * mg / 1000f
+                r = r.copy(dieselLph = gPerS * 3600f / DIESEL_G_PER_L)
+            }
             val trip = _state.value.trip.let { t ->
                 if (!answered || kmh == null) t else t.copy(
                     meters = t.meters + kmh / 3.6 * dt / 1000.0,
@@ -202,6 +220,8 @@ class ObdLink(private val context: Context) {
                     fuelL = t.fuelL + (r.fuelLph ?: 0f) * dt / 3_600_000.0,
                     maxBoostBar = maxOf(t.maxBoostBar, r.boostBar ?: 0f),
                     maxRpm = maxOf(t.maxRpm, r.rpm ?: 0f),
+                    injections = t.injections + (rpmNow ?: 0f) / 30.0 * dt / 1_000_000.0,
+                    injectionsLoad = t.injectionsLoad + (rpmNow ?: 0f) / 30.0 * (loadNow ?: 0f) * dt / 1_000_000.0,
                 )
             }
             val rate = if (now - since >= 2_000) {
@@ -290,8 +310,13 @@ class ObdLink(private val context: Context) {
         usb.requestPermission(device, pending)
     }
 
-    private companion object {
+    companion object {
+        const val DIESEL_Q0 = -9.8f
+        const val DIESEL_Q1 = 0.668f
+        /** Grams in a litre of diesel. */
+        const val DIESEL_G_PER_L = 832f
+
         /** Not a PID: the dongle's own voltage reading (ATRV). */
-        const val VOLTS = -1
+        private const val VOLTS = -1
     }
 }

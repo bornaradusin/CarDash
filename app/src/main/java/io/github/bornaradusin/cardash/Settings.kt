@@ -47,6 +47,22 @@ class Settings(context: Context) {
         _musicApp.value = pkg
     }
 
+    private val _diesel = MutableStateFlow(sp.getBoolean("diesel", false))
+    val diesel: StateFlow<Boolean> = _diesel
+
+    fun setDiesel(v: Boolean) {
+        sp.edit().putBoolean("diesel", v).apply()
+        _diesel.value = v
+    }
+
+    var dieselQ0: Float
+        get() = sp.getFloat("dieselQ0", io.github.bornaradusin.cardash.obd.ObdLink.DIESEL_Q0)
+        set(v) = sp.edit().putFloat("dieselQ0", v).apply()
+
+    var dieselQ1: Float
+        get() = sp.getFloat("dieselQ1", io.github.bornaradusin.cardash.obd.ObdLink.DIESEL_Q1)
+        set(v) = sp.edit().putFloat("dieselQ1", v).apply()
+
     private val _fuelFactor = MutableStateFlow(sp.getFloat("fuelFactor", 1f))
     /** Scales the air-flow fuel figure to match the car's own. */
     val fuelFactor: StateFlow<Float> = _fuelFactor

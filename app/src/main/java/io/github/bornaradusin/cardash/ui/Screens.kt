@@ -111,6 +111,8 @@ data class DashState(
     val fullScreen: Boolean,
     /** Goes up each time the radio's Home button is pressed: back to the Home page. */
     val homePresses: Int,
+    /** The engine runs on diesel: fuel use is worked out from load and RPM, not air flow. */
+    val diesel: Boolean,
     /** What Save radio files last said. */
     val radioFiles: String?,
     val can: CanState,
@@ -140,6 +142,7 @@ class DashActions(
     val resetFuel: () -> Unit,
     /** Matches fuel use to the car's trip computer: its average for this drive, L/100 km. */
     val matchFuelAverage: (Float) -> Unit,
+    val setDiesel: (Boolean) -> Unit,
     val setCanPick: (CanRole, CanPick?) -> Unit,
     val uninstall: (String) -> Unit,
     val appInfo: (String) -> Unit,
@@ -1093,9 +1096,21 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                 CanCard(state, actions)
                 Card("Fuel use") {
                     val r = state.obd.readings
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Diesel engine", color = C.ink, fontSize = 17.sp)
+                            Text("A diesel's fuel follows engine load, not air flow", color = C.muted, fontSize = 14.sp)
+                        }
+                        Switch(
+                            checked = state.diesel,
+                            onCheckedChange = actions.setDiesel,
+                            colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
+                        )
+                    }
                     Text(
                         when {
                             r.fuelRateLph != null -> "The engine reports its own fuel use: ${fmt(r.fuelRateLph, 1)} L/h"
+                            r.dieselLph != null -> "Now: ${fmt(r.dieselLph, 1)} L/h, worked out from engine load and RPM"
                             r.fuelLph != null -> "Now: ${fmt(r.fuelLph!!, 1)} L/h, worked out from the air flow" +
                                 if (r.fuelFactor != 1f) " (matched to the car: ×${fmt(r.fuelFactor, 2)})" else ""
                             else -> "Not reading yet"
@@ -1146,7 +1161,7 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                             Wide("Match drive") { carAvg.replace(',', '.').toFloatOrNull()?.let(actions.matchFuelAverage) }
                         }
                     }
-                    if (r.fuelFactor != 1f) Wide("Undo matching", actions.resetFuel)
+                    Wide("Undo matching", actions.resetFuel)
                 }
                 Card("Waze") {
                     Text(if (state.nav != null) "Navigating: shown on Home" else "Not navigating", color = C.ink, fontSize = 17.sp)

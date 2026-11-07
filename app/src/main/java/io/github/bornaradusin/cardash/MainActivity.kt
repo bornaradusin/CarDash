@@ -23,6 +23,7 @@ import io.github.bornaradusin.cardash.car.Apps
 import io.github.bornaradusin.cardash.car.CarNotifications
 import io.github.bornaradusin.cardash.car.Media
 import io.github.bornaradusin.cardash.car.RadioFiles
+import io.github.bornaradusin.cardash.obd.ObdLink
 import io.github.bornaradusin.cardash.car.CanRole
 import io.github.bornaradusin.cardash.car.canValues
 import io.github.bornaradusin.cardash.car.effectivePicks
@@ -73,9 +74,21 @@ class MainActivity : ComponentActivity() {
                 applyFullScreen(it)
             },
             saveRadioFiles = { saveRadioFiles() },
-            matchFuel = { carSays ->
-                // The factor that turns the air-flow figure now into what the car says
-                val raw = app.obd.state.value.readings.fuelLphRaw
+            matchFuel = idle@{ carSays ->
+                val now = app.obd.state.value.readings
+                val rpm = now.rpm
+                val load = now.loadPct
+                if (app.obd.diesel) {
+                    // Diesel at idle: the per-injection offset that gives what the car says
+                    if (rpm != null && rpm > 300f && load != null && carSays > 0f) {
+                        val mg = carSays * ObdLink.DIESEL_G_PER_L / 3600f * 30f * 1000f / rpm
+                        app.settings.dieselQ0 = mg - app.obd.dieselQ1 * load
+                        app.obd.dieselQ0 = app.settings.dieselQ0
+                    }
+                    return@idle
+                }
+                // Petrol: the factor that turns the air-flow figure now into what the car says
+                val raw = now.fuelLphRaw
                 if (raw != null && raw > 0.05f && carSays > 0f) {
                     app.settings.setFuelFactor(carSays / raw)
                     app.obd.fuelFactor = app.settings.fuelFactor.value
@@ -84,9 +97,22 @@ class MainActivity : ComponentActivity() {
             setCanPick = { role, pick -> app.settings.setCanPick(role, pick) },
             uninstall = { pkg -> Apps.uninstall(this, pkg) },
             appInfo = { pkg -> Apps.info(this, pkg) },
-            matchFuelAverage = { carAvg ->
-                // This drive's fuel was counted with the factor in use, so scale that factor
-                val ours = app.obd.state.value.trip.avgL100
+            matchFuelAverage = drive@{ carAvg ->
+                val trip = app.obd.state.value.trip
+                if (app.obd.diesel) {
+                    // Diesel over a drive: keep the idle offset, find the load slope that gives the car's figure
+                    val grams = carAvg / 100.0 * (trip.meters / 1000.0) * ObdLink.DIESEL_G_PER_L
+                    if (trip.injectionsLoad > 0.0 && carAvg > 0f && trip.meters > 500) {
+                        val q1 = ((grams - app.obd.dieselQ0 * trip.injections) / trip.injectionsLoad).toFloat()
+                        if (q1 > 0f) {
+                            app.settings.dieselQ1 = q1
+                            app.obd.dieselQ1 = q1
+                        }
+                    }
+                    return@drive
+                }
+                // Petrol: this drive's fuel was counted with the factor in use, so scale that factor
+                val ours = trip.avgL100
                 if (ours != null && ours > 0.1 && carAvg > 0f) {
                     app.settings.setFuelFactor(app.obd.fuelFactor * (carAvg / ours.toFloat()))
                     app.obd.fuelFactor = app.settings.fuelFactor.value
@@ -95,6 +121,14 @@ class MainActivity : ComponentActivity() {
             resetFuel = {
                 app.settings.setFuelFactor(1f)
                 app.obd.fuelFactor = 1f
+                app.settings.dieselQ0 = ObdLink.DIESEL_Q0
+                app.settings.dieselQ1 = ObdLink.DIESEL_Q1
+                app.obd.dieselQ0 = ObdLink.DIESEL_Q0
+                app.obd.dieselQ1 = ObdLink.DIESEL_Q1
+            },
+            setDiesel = { on ->
+                app.settings.setDiesel(on)
+                app.obd.diesel = on
             },
         )
 
@@ -108,6 +142,7 @@ class MainActivity : ComponentActivity() {
             val icons by app.settings.icons.collectAsState()
             val lastWaze by CarNotifications.lastWaze.collectAsState()
             val musicApp by app.settings.musicApp.collectAsState()
+            val diesel by app.settings.diesel.collectAsState()
             val can by app.can.state.collectAsState()
             val canPicks by app.settings.canPicks.collectAsState()
             val usedPicks = remember(can, canPicks) { effectivePicks(can.values, canPicks) }
@@ -138,6 +173,7 @@ class MainActivity : ComponentActivity() {
                 hasNotifications = remember(resumes) { CarNotifications.allowed(this@MainActivity) },
                 fullScreen = fullScreen,
                 homePresses = homePresses,
+                diesel = diesel,
                 radioFiles = radioFiles,
                 can = can,
                 canPicks = usedPicks,

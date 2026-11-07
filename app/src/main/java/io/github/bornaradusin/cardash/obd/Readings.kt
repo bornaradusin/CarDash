@@ -20,6 +20,8 @@ data class Readings(
     val fuelRateLph: Float? = null,
     /** Matches the air-flow fuel figure to the car's (Settings → Fuel use); 1 = as worked out. */
     val fuelFactor: Float = 1f,
+    /** A diesel's fuel use, from engine load and RPM (set by ObdLink when the engine is a diesel). */
+    val dieselLph: Float? = null,
     /** From the radio's CAN box, once that's wired up. */
     val odometerKm: Float? = null,
     val loadPct: Float? = null,
@@ -35,7 +37,7 @@ data class Readings(
 
     /** Petrol used right now, litres an hour: the engine's own figure, else from the air flow. */
     val fuelLph: Float?
-        get() = fuelRateLph ?: fuelLphRaw?.let { it * fuelFactor }
+        get() = fuelRateLph ?: dieselLph ?: fuelLphRaw?.let { it * fuelFactor }
 
     /** Litres per 100 km at this moment, while moving. */
     val fuelL100: Float?
@@ -87,6 +89,9 @@ data class Trip(
     val fuelL: Double = 0.0,
     val maxBoostBar: Float = 0f,
     val maxRpm: Float = 0f,
+    /** For matching a diesel to the car: Σ injections (thousands), and Σ injections × load. */
+    val injections: Double = 0.0,
+    val injectionsLoad: Double = 0.0,
 ) {
     val avgKmh: Double get() = if (drivingMs > 0) meters / 1000.0 / (drivingMs / 3_600_000.0) else 0.0
     /** Average consumption this drive, once it's gone far enough to mean something. */
