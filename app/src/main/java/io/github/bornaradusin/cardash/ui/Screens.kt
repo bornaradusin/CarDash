@@ -387,15 +387,17 @@ private fun SpeedDial(r: Readings, tripMeters: Double, size: Dp) {
             Modifier.size(size * 0.41f).clip(CircleShape).background(Color(0xFF0A0C10)).border(2.dp, C.line, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            // Just the number, in the middle of the circle
-            Text(
-                r.speedKmh?.toInt()?.toString() ?: "–",
-                color = C.ink, fontSize = (size.value * 0.17f).sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    r.speedKmh?.toInt()?.toString() ?: "–",
+                    color = C.ink, fontSize = (size.value * 0.17f).sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
+                )
+                Text("km/h", color = C.muted, fontSize = (size.value * 0.038f).sp)
+            }
         }
-        // The odometer from the radio's CAN box once that's read; until then, this drive's distance
+        // The odometer from the radio's CAN box once that's read; until then, this drive's distance. Just the number
         Text(
-            r.odometerKm?.let { "%,d km".format(Locale.US, it.toLong()) } ?: "${fmt((tripMeters / 1000).toFloat(), 1)} km",
+            r.odometerKm?.let { "%,d".format(Locale.US, it.toLong()) } ?: fmt((tripMeters / 1000).toFloat(), 1),
             color = C.ink, fontSize = (size.value * 0.058f).sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.align(Alignment.TopCenter).padding(top = size * 0.818f),
         )

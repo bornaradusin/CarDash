@@ -104,7 +104,7 @@ fun Dial(
             if (bottomArc) {
                 // Low across the middle of the face, filling from the left; centred on the dial, so it keeps its curve,
                 // and short enough to stay clear of the 0 and 6
-                val br = r * 0.854f
+                val br = r * 0.777f
                 val tl = Offset(c.x - br, c.y - br)
                 val sz = Size(br * 2, br * 2)
                 val w = r * 0.04f
