@@ -155,6 +155,9 @@ fun Scaled(content: @Composable () -> Unit) {
     }
 }
 
+/** The two big dials on Home. */
+private val DIAL = 468.dp
+
 private const val PAGE_APPS = 0
 private const val PAGE_HOME = 1
 private const val PAGE_GAUGES = 2
@@ -217,7 +220,7 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
         }
     }
     Row(
-        Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 24.dp),
+        Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
@@ -291,13 +294,14 @@ private fun Home(state: DashState, actions: DashActions, allApps: () -> Unit) {
     val r = state.obd.readings
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp),
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            RpmDial(r, 430.dp)
-            Column(Modifier.weight(1f).fillMaxHeight().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            RpmDial(r, DIAL)
+            // As tall as the dials, so the small gauges start level with their tops and the box ends level with their bottoms
+            Column(Modifier.weight(1f).height(DIAL), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     // Oil once the radio's CAN box is read; until then, engine load
                     if (r.oilC != null) RoundGauge(Ic.oil, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 130f)
                     else RoundGauge(Ic.gauge, "Engine load", r.loadPct, 0f, 100f, r.loadPct?.let { "${it.toInt()}" }, "%")
@@ -307,7 +311,7 @@ private fun Home(state: DashState, actions: DashActions, allApps: () -> Unit) {
                 }
                 CenterPanel(state, actions, Modifier.weight(1f).fillMaxWidth())
             }
-            SpeedDial(r, state.obd.trip.meters, 430.dp)
+            SpeedDial(r, state.obd.trip.meters, DIAL)
         }
         BottomBar(state, actions, allApps)
     }
@@ -381,7 +385,7 @@ private fun RoundGauge(
 ) {
     val frac = value?.let { ((it - min) / (max - min)).coerceIn(0f, 1f) } ?: 0f
     val warn = value != null && ((warnAbove != null && value > warnAbove) || (warnBelow != null && value < warnBelow))
-    Box(Modifier.size(86.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 5.dp.toPx()
             val inset = stroke / 2 + 3.dp.toPx()
@@ -397,9 +401,9 @@ private fun RoundGauge(
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, name, tint = if (warn) C.red else C.ink2, modifier = Modifier.size(20.dp))
+            Icon(icon, name, tint = if (warn) C.red else C.ink2, modifier = Modifier.size(18.dp))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(text ?: "–", color = C.ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                Text(text ?: "–", color = C.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 if (text != null) Text(" $unit", color = C.muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
             }
         }
@@ -416,7 +420,7 @@ private fun CenterPanel(state: DashState, actions: DashActions, modifier: Modifi
             .clip(RoundedCornerShape(22.dp))
             .background(C.panel)
             .border(1.dp, if (nav != null) C.redDeep else C.line, RoundedCornerShape(22.dp))
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         if (nav != null) {
             NavPanel(nav)
@@ -552,7 +556,7 @@ private fun Stat(name: String, value: String?, unit: String, modifier: Modifier 
     Column(modifier) {
         Text(name, color = C.muted, fontSize = 13.sp, maxLines = 1)
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(value ?: "–", color = if (value == null) C.muted else C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, fontStyle = FontStyle.Italic, maxLines = 1)
+            Text(value ?: "–", color = if (value == null) C.muted else C.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, fontStyle = FontStyle.Italic, maxLines = 1)
             if (value != null) Text(" $unit", color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 3.dp), maxLines = 1)
         }
     }
