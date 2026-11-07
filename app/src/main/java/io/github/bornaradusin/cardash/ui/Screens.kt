@@ -223,13 +223,11 @@ private fun Home(state: DashState, actions: DashActions, allApps: () -> Unit) {
         Row(Modifier.height(392.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             RpmDial(r, Modifier.size(372.dp))
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill(Ic.oil, "Oil", r.oilC?.let { "${it.toInt()}" }, "°C", Modifier.weight(1f))
-                    Pill(Ic.boost, "Boost", r.boostBar?.let { fmt(it, 1) }, "bar", Modifier.weight(1f))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill(Ic.air, "Intake air", r.intakeC?.let { "${it.toInt()}" }, "°C", Modifier.weight(1f))
-                    Pill(Ic.battery, "Battery", r.volts?.let { fmt(it, 1) }, "V", Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    RoundGauge(Ic.coolant, "Coolant", r.coolantC, 40f, 130f, r.coolantC?.let { "${it.toInt()}" }, "°C", warnAbove = 110f)
+                    RoundGauge(Ic.oil, "Oil", r.oilC, 40f, 150f, r.oilC?.let { "${it.toInt()}" }, "°C", warnAbove = 130f)
+                    RoundGauge(Ic.boost, "Boost", r.boostBar, 0f, 1.5f, r.boostBar?.let { fmt(it, 1) }, "bar")
+                    RoundGauge(Ic.battery, "Battery", r.volts, 11f, 15f, r.volts?.let { fmt(it, 1) }, "V", warnBelow = 11.8f)
                 }
                 CenterPanel(state, actions, Modifier.weight(1f).fillMaxWidth())
             }
@@ -250,10 +248,7 @@ private fun RpmDial(r: Readings, modifier: Modifier) {
             Text(r.rpm?.let { "%,d".format(Locale.US, it.toInt()) } ?: "RPM", color = C.ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
             Text("rpm", color = C.muted, fontSize = 14.sp)
         }
-        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(Ic.coolant, "Coolant", tint = C.red, modifier = Modifier.size(20.dp))
-            Text(r.coolantC?.let { "${it.toInt()} °C" } ?: "–", color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-        }
+        BottomArc(Ic.coolant, "Coolant", r.coolantC?.let { "${it.toInt()} °C" }, r.coolantC?.let { ((it - 40f) / 90f) })
     }
 }
 
@@ -266,9 +261,71 @@ private fun SpeedDial(r: Readings, modifier: Modifier) {
                 Text("km/h", color = C.muted, fontSize = 16.sp)
             }
         }
-        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(Ic.fuel, "Fuel", tint = C.red, modifier = Modifier.size(20.dp))
-            Text(r.fuelPct?.let { "${it.toInt()} %" } ?: "–", color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        BottomArc(Ic.fuel, "Fuel", r.fuelPct?.let { "${it.toInt()} %" }, r.fuelPct?.let { it / 100f })
+    }
+}
+
+/**
+ * A small round gauge, like the ones between the dials: a ring that fills with the value (red
+ * past a warning level), the icon on top and the number underneath.
+ */
+@Composable
+private fun RoundGauge(
+    icon: ImageVector,
+    name: String,
+    value: Float?,
+    min: Float,
+    max: Float,
+    text: String?,
+    unit: String,
+    warnAbove: Float? = null,
+    warnBelow: Float? = null,
+) {
+    val frac = value?.let { ((it - min) / (max - min)).coerceIn(0f, 1f) } ?: 0f
+    val warn = value != null && ((warnAbove != null && value > warnAbove) || (warnBelow != null && value < warnBelow))
+    Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val stroke = 5.dp.toPx()
+            val inset = stroke / 2 + 2.dp.toPx()
+            val tl = androidx.compose.ui.geometry.Offset(inset, inset)
+            val sz = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2)
+            drawCircle(Brush.radialGradient(listOf(Color(0xFF1A1E26), Color(0xFF0A0C10))), size.minDimension / 2)
+            drawCircle(C.lineHi, size.minDimension / 2 - 1.dp.toPx(), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+            // A ring from the lower left round to the lower right, as on the big dials
+            drawArc(C.track, 135f, 270f, false, tl, sz, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            if (value != null && frac > 0f) {
+                val col = if (warn) Color(0xFFFF5566) else C.red
+                drawArc(col.copy(alpha = 0.25f), 135f, 270f * frac, false, tl, sz, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke * 2.6f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                drawArc(col, 135f, 270f * frac, false, tl, sz, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, name, tint = if (warn) C.red else C.ink2, modifier = Modifier.size(22.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(text ?: "–", color = C.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                if (text != null) Text(" $unit", color = C.muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 3.dp))
+            }
+        }
+    }
+}
+
+/** The small arc and reading at the bottom of a big dial (coolant on RPM, fuel on speed). */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.BottomArc(icon: ImageVector, name: String, text: String?, frac: Float?) {
+    Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 30.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, name, tint = C.red, modifier = Modifier.size(22.dp))
+            Text(text ?: "–", color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        }
+        androidx.compose.foundation.Canvas(Modifier.size(130.dp, 26.dp)) {
+            val stroke = 6.dp.toPx()
+            val tl = androidx.compose.ui.geometry.Offset(stroke, stroke)
+            val sz = androidx.compose.ui.geometry.Size(size.width - stroke * 2, size.height * 4f)
+            drawArc(C.track, 200f, 140f, false, tl, sz, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            val f = (frac ?: 0f).coerceIn(0f, 1f)
+            if (frac != null && f > 0f) {
+                drawArc(C.red, 200f, 140f * f, false, tl, sz, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            }
         }
     }
 }
