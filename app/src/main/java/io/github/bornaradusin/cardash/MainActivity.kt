@@ -23,6 +23,8 @@ import io.github.bornaradusin.cardash.car.Apps
 import io.github.bornaradusin.cardash.car.CarNotifications
 import io.github.bornaradusin.cardash.car.Media
 import io.github.bornaradusin.cardash.car.RadioFiles
+import io.github.bornaradusin.cardash.car.CanRole
+import io.github.bornaradusin.cardash.car.canValues
 import io.github.bornaradusin.cardash.ui.CarDash
 import io.github.bornaradusin.cardash.ui.DashActions
 import io.github.bornaradusin.cardash.ui.DashState
@@ -78,6 +80,7 @@ class MainActivity : ComponentActivity() {
                     app.obd.fuelFactor = app.settings.fuelFactor.value
                 }
             },
+            setCanPick = { role, pick -> app.settings.setCanPick(role, pick) },
             resetFuel = {
                 app.settings.setFuelFactor(1f)
                 app.obd.fuelFactor = 1f
@@ -94,13 +97,25 @@ class MainActivity : ComponentActivity() {
             val icons by app.settings.icons.collectAsState()
             val lastWaze by CarNotifications.lastWaze.collectAsState()
             val musicApp by app.settings.musicApp.collectAsState()
+            val can by app.can.state.collectAsState()
+            val canPicks by app.settings.canPicks.collectAsState()
+            val fromCan = remember(can, canPicks) { canValues(can.values, canPicks) }
+            // The CAN box's values go where the dashboard shows them; OBD fills in the rest
+            val merged = obd.copy(
+                readings = obd.readings.copy(
+                    oilC = fromCan[CanRole.OIL] ?: obd.readings.oilC,
+                    odometerKm = fromCan[CanRole.ODOMETER],
+                    ambientC = fromCan[CanRole.OUTSIDE] ?: obd.readings.ambientC,
+                    coolantC = obd.readings.coolantC ?: fromCan[CanRole.COOLANT],
+                ),
+            )
             var apps by remember { mutableStateOf(emptyList<io.github.bornaradusin.cardash.car.AppEntry>()) }
             LaunchedEffect(resumes) {
                 apps = withContext(Dispatchers.IO) { Apps.all(this@MainActivity) }
             }
             val state = DashState(
                 name = name,
-                obd = obd,
+                obd = merged,
                 nav = nav,
                 now = now,
                 apps = apps,
@@ -112,6 +127,9 @@ class MainActivity : ComponentActivity() {
                 fullScreen = fullScreen,
                 homePresses = homePresses,
                 radioFiles = radioFiles,
+                can = can,
+                canPicks = canPicks,
+                canValues = fromCan,
             )
             Scaled { CarDash(state, actions) }
         }
@@ -121,6 +139,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         resumes++
         app.obd.start()
+        app.can.start()
         media.preferred = musicApp()
         media.start()
         applyFullScreen(app.settings.fullScreen.value)

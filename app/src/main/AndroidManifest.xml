@@ -9,6 +9,11 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- The radio's CAN service (oil temperature, odometer) -->
+    <queries>
+        <package android:name="com.syu.ms" />
+    </queries>
+
     <application
         android:name=".CarDashApp"
         android:allowBackup="false"

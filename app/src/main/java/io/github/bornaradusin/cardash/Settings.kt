@@ -3,6 +3,8 @@ package io.github.bornaradusin.cardash
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import io.github.bornaradusin.cardash.car.CanPick
+import io.github.bornaradusin.cardash.car.CanRole
 
 /** What the person has chosen, kept on the radio. */
 class Settings(context: Context) {
@@ -53,6 +55,17 @@ class Settings(context: Context) {
         val f = v.coerceIn(0.05f, 3f)
         sp.edit().putFloat("fuelFactor", f).apply()
         _fuelFactor.value = f
+    }
+
+    private val _canPicks = MutableStateFlow(
+        CanRole.entries.mapNotNull { role -> CanPick.decode(sp.getString("can_${role.name}", null))?.let { role to it } }.toMap(),
+    )
+    /** Which CAN box value is which (oil temperature, odometer…). */
+    val canPicks: StateFlow<Map<CanRole, CanPick>> = _canPicks
+
+    fun setCanPick(role: CanRole, pick: CanPick?) {
+        sp.edit().apply { if (pick == null) remove("can_${role.name}") else putString("can_${role.name}", pick.encode()) }.apply()
+        _canPicks.value = if (pick == null) _canPicks.value - role else _canPicks.value + (role to pick)
     }
 
     private val _fullScreen = MutableStateFlow(sp.getBoolean("fullScreen", true))

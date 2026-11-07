@@ -76,6 +76,11 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import io.github.bornaradusin.cardash.car.AppEntry
 import io.github.bornaradusin.cardash.car.Apps
+import io.github.bornaradusin.cardash.car.CanPick
+import io.github.bornaradusin.cardash.car.CanRole
+import io.github.bornaradusin.cardash.car.CanScale
+import io.github.bornaradusin.cardash.car.CanState
+import io.github.bornaradusin.cardash.car.CanValue
 import io.github.bornaradusin.cardash.car.CarNotifications
 import io.github.bornaradusin.cardash.car.NavInfo
 import io.github.bornaradusin.cardash.car.NowPlaying
@@ -107,6 +112,10 @@ data class DashState(
     val homePresses: Int,
     /** What Save radio files last said. */
     val radioFiles: String?,
+    val can: CanState,
+    val canPicks: Map<CanRole, CanPick>,
+    /** The CAN box values the person has assigned, ready to show. */
+    val canValues: Map<CanRole, Float>,
 )
 
 /** What the screens can ask for. */
@@ -128,6 +137,7 @@ class DashActions(
     /** Matches fuel use to the car: what the car says it's using right now, in L/h. */
     val matchFuel: (Float) -> Unit,
     val resetFuel: () -> Unit,
+    val setCanPick: (CanRole, CanPick?) -> Unit,
 )
 
 /**
@@ -185,7 +195,7 @@ fun CarDash(state: DashState, actions: DashActions) {
                         }
                         PAGE_HOME -> Home(state, actions) { scope.launch { pager.animateScrollToPage(PAGE_APPS) } }
                         else -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
-                            Gauges(state.obd, actions)
+                            Gauges(state.obd, state.canValues, actions)
                         }
                     }
                 }
@@ -427,7 +437,7 @@ private fun CenterPanel(state: DashState, actions: DashActions, modifier: Modifi
                 }
             }
         } else {
-            DrivePanel(state.obd)
+            DrivePanel(state.obd, state.canValues[CanRole.RANGE])
         }
     }
 }
@@ -484,7 +494,7 @@ private fun NavPanel(nav: NavInfo) {
 
 /** With no route in Waze: what the engine is doing and this drive so far. */
 @Composable
-private fun DrivePanel(obd: ObdState) {
+private fun DrivePanel(obd: ObdState, rangeKm: Float?) {
     val r = obd.readings
     val t = obd.trip
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -516,7 +526,9 @@ private fun DrivePanel(obd: ObdState) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Stat("Max RPM", if (t.maxRpm > 0) "%,d".format(Locale.US, t.maxRpm.toInt()) else null, "", Modifier.weight(1f))
-            Stat("Air flow", r.mafGs?.let { fmt(it, 1) }, "g/s", Modifier.weight(1f))
+            val range = rangeKm
+            if (range != null) Stat("Range", "%,d".format(Locale.US, range.toLong()), "km", Modifier.weight(1f))
+            else Stat("Air flow", r.mafGs?.let { fmt(it, 1) }, "g/s", Modifier.weight(1f))
             Stat("Outside", r.ambientC?.let { "${it.toInt()}" }, "°C", Modifier.weight(1f))
         }
     }
@@ -757,7 +769,7 @@ private fun RoundButton(icon: ImageVector, label: String, enabled: Boolean, onCl
 // ---------- gauges ----------
 
 @Composable
-private fun Gauges(obd: ObdState, actions: DashActions) {
+private fun Gauges(obd: ObdState, can: Map<CanRole, Float>, actions: DashActions) {
     val r = obd.readings
     val t = obd.trip
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -777,13 +789,15 @@ private fun Gauges(obd: ObdState, actions: DashActions) {
                 Triple("Engine load", r.loadPct?.let { "${it.toInt()}" }, "%"),
                 Triple("Fuel now", r.fuelL100?.let { fmt(it, 1) } ?: r.fuelLph?.let { fmt(it, 1) }, if (r.fuelL100 != null) "L/100" else "L/h"),
                 Triple("Air flow", r.mafGs?.let { fmt(it, 1) }, "g/s"),
-            )
+            ) + listOf(CanRole.ODOMETER, CanRole.RANGE, CanRole.FUEL_LEVEL, CanRole.FUEL_AVG).mapNotNull { role ->
+                // From the radio's CAN box, once assigned in Settings
+                can[role]?.let { v -> Triple(role.title, if (role == CanRole.ODOMETER || role == CanRole.RANGE) "%,d".format(Locale.US, v.toLong()) else fmt(v, 1), role.unit) }
+            }
             LazyVerticalGrid(
                 GridCells.Fixed(3),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.height(384.dp),
-                userScrollEnabled = false,
             ) {
                 items(tiles) { (name, value, unit) -> Tile(name, value, unit) }
             }
@@ -988,15 +1002,7 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                         }
                     }
                 }
-                Card("Radio's CAN box") {
-                    Text(
-                        "Oil temperature and the odometer come from the radio's own CAN box, not the OBD dongle. To read them, " +
-                            "save the radio's apps, copy the Download/CarDash folder to a USB stick and send the files.",
-                        color = C.muted, fontSize = 14.sp,
-                    )
-                    Wide("Save radio files", actions.saveRadioFiles)
-                    state.radioFiles?.let { Text(it, color = C.ink2, fontSize = 14.sp) }
-                }
+                CanCard(state, actions)
                 Card("Fuel use") {
                     val r = state.obd.readings
                     Text(
@@ -1038,6 +1044,99 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
             }
         }
     }
+}
+
+/**
+ * Everything the radio's CAN box sends, by code, live. Tapping one assigns it to something on the
+ * dashboard (oil temperature, odometer…), with how to scale it.
+ */
+@Composable
+private fun CanCard(state: DashState, actions: DashActions) {
+    var picking by remember { mutableStateOf<CanValue?>(null) }
+    var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            clock = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
+    Card("Radio's CAN box") {
+        Text(state.can.status, color = C.ink, fontSize = 16.sp)
+        if (state.canPicks.isNotEmpty()) {
+            state.canPicks.forEach { (role, pick) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(role.title, color = C.ink, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    Text(
+                        state.canValues[role]?.let { "${fmt(it, 1)} ${role.unit}" } ?: "–",
+                        color = C.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                    Text("  code ${pick.code}", color = C.muted, fontSize = 13.sp)
+                    Box(Modifier.size(40.dp).clip(CircleShape).clickable { actions.setCanPick(role, null) }, contentAlignment = Alignment.Center) {
+                        Text("✕", color = C.muted, fontSize = 16.sp)
+                    }
+                }
+            }
+        }
+        Text(
+            "Every value the CAN box sends. Compare with the radio's Vehicle settings (oil, odometer…), tap the matching row and say what it is. " +
+                "Values that just changed are red.",
+            color = C.muted, fontSize = 14.sp,
+        )
+        val rows = state.can.values.values.sortedBy { it.code }
+        if (rows.isEmpty()) Text("Nothing received yet", color = C.muted, fontSize = 14.sp)
+        else Column(
+            Modifier.fillMaxWidth().height(320.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF05060A))
+                .verticalScroll(rememberScrollState()).padding(vertical = 4.dp),
+        ) {
+            rows.forEach { v ->
+                val fresh = clock - v.at < 3_000
+                Row(
+                    Modifier.fillMaxWidth().clickable { picking = v }.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("${v.code}", color = C.muted, fontSize = 14.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(48.dp))
+                    Text(v.describe(), color = if (fresh) C.red else C.ink2, fontSize = 14.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        Wide("Save radio files (for a closer look)", actions.saveRadioFiles)
+        state.radioFiles?.let { Text(it, color = C.ink2, fontSize = 14.sp) }
+    }
+    picking?.let { v -> CanPicker(v, onPick = { role, pick -> actions.setCanPick(role, pick); picking = null }, onDismiss = { picking = null }) }
+}
+
+@Composable
+private fun CanPicker(v: CanValue, onPick: (CanRole, CanPick) -> Unit, onDismiss: () -> Unit) {
+    var index by remember { mutableStateOf(if (v.ints.size == 1) 0 else -1) }
+    var role by remember { mutableStateOf<CanRole?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.panelHi,
+        title = { Text("Code ${v.code}", color = C.ink) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    v.ints.isEmpty() -> Text("This one has no numbers to use: ${v.describe()}", color = C.ink2)
+                    index < 0 -> {
+                        Text("Which number?", color = C.ink2)
+                        v.ints.forEachIndexed { i, n -> Wide("$n") { index = i } }
+                    }
+                    role == null -> {
+                        Text("${v.ints[index]} is the…", color = C.ink2)
+                        CanRole.entries.forEach { r -> Wide(r.title) { role = r } }
+                    }
+                    else -> {
+                        val raw = v.ints[index]
+                        Text("Which matches the car's ${role!!.title.lowercase()}?", color = C.ink2)
+                        CanScale.entries.forEach { s ->
+                            Wide("${fmt(s.apply(raw), 1)} ${role!!.unit}   (${s.title})") { onPick(role!!, CanPick(v.code, index, s)) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2) } },
+    )
 }
 
 @Composable

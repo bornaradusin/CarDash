@@ -10,6 +10,9 @@ class CarDashApp : Application() {
 
     val settings: Settings by lazy { Settings(this) }
 
+    /** The radio's own CAN box (oil temperature, odometer and the rest). */
+    val can: io.github.bornaradusin.cardash.car.CanBox by lazy { io.github.bornaradusin.cardash.car.CanBox(this) }
+
     override fun onCreate() {
         super.onCreate()
         obd.fuelFactor = settings.fuelFactor.value
