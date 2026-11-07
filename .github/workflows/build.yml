@@ -61,6 +61,8 @@ jobs:
               echo "CARDASH_KEYSTORE_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
               echo "Signing key OK"
             else
+              # Its length and a few characters of its hash (not the password) show what was pasted
+              echo "Password secret: ${#PASSWORD} characters, hash $(printf '%s' "$PASSWORD" | sha256sum | cut -c1-8)"
               echo "::error::ANDROID_KEYSTORE_PASSWORD doesn't open signing/cardash.jks.enc: check the secret has exactly the password, nothing else."
               exit 1
             fi
