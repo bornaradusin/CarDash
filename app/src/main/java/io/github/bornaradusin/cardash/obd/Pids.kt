@@ -23,9 +23,11 @@ object Pids {
         val b = d.getOrNull(1)?.toFloat()
         return when (pid) {
             RPM -> b?.let { (256 * a + it) / 4f }
+            MAF -> b?.let { (256 * a + it) / 100f }
+            TIMING -> a / 2f - 64f
             SPEED, MAP, BARO -> a
             COOLANT, INTAKE, OIL, AMBIENT -> a - 40
-            THROTTLE, LOAD, FUEL -> a * 100f / 255f
+            THROTTLE, LOAD, FUEL, PEDAL -> a * 100f / 255f
             else -> null
         }
     }
@@ -71,4 +73,10 @@ object Pids {
     const val BARO = 0x33
     const val AMBIENT = 0x46
     const val OIL = 0x5C
+    /** Accelerator pedal position D: reads about 15 % with the foot off on most cars. */
+    const val PEDAL = 0x49
+    /** Air flow into the engine, g/s: what fuel use is worked out from. */
+    const val MAF = 0x10
+    /** Ignition timing advance, degrees before top dead centre. */
+    const val TIMING = 0x0E
 }

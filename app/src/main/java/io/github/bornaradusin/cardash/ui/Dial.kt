@@ -47,6 +47,9 @@ fun Dial(
     labelEvery: Float = major,
     label: (Float) -> String = { it.toInt().toString() },
     needle: Boolean = true,
+    /** Draws the small arc low in the dial (coolant on the RPM dial); its fill, 0..1, or null for empty. */
+    bottomArc: Boolean = false,
+    bottomFill: Float? = null,
     content: @Composable BoxScope.() -> Unit = {},
 ) {
     val shown by animateFloatAsState((value ?: 0f).coerceIn(0f, max), tween(250), label = "dial")
@@ -96,6 +99,20 @@ fun Dial(
                     drawContext.canvas.nativeCanvas.drawText(label(v), p.x, p.y + paint.textSize * 0.35f, paint)
                 }
                 v += minor
+            }
+
+            if (bottomArc) {
+                // Across the bottom of the face, filling from the left
+                val br = r * 0.70f
+                val tl = Offset(c.x - br, c.y - br)
+                val sz = Size(br * 2, br * 2)
+                val w = r * 0.04f
+                drawArc(C.track, 125f, -70f, false, tl, sz, style = Stroke(w, cap = StrokeCap.Round))
+                val f = (bottomFill ?: 0f).coerceIn(0f, 1f)
+                if (bottomFill != null && f > 0.01f) {
+                    drawArc(C.red.copy(alpha = 0.25f), 125f, -70f * f, false, tl, sz, style = Stroke(w * 2.6f, cap = StrokeCap.Round))
+                    drawArc(C.red, 125f, -70f * f, false, tl, sz, style = Stroke(w, cap = StrokeCap.Round))
+                }
             }
 
             if (needle) needle(c, r, Math.toRadians((START + SWEEP * shown / max).toDouble()), if (value != null) C.red else C.muted)

@@ -12,6 +12,12 @@ data class Readings(
     val mapKpa: Float? = null,
     val baroKpa: Float? = null,
     val throttlePct: Float? = null,
+    /** The accelerator pedal, 0 % with the foot off and 100 % flat out (from the pedal sensor's own range). */
+    val pedalPct: Float? = null,
+    val mafGs: Float? = null,
+    val timingDeg: Float? = null,
+    /** From the radio's CAN box, once that's wired up. */
+    val odometerKm: Float? = null,
     val loadPct: Float? = null,
     val fuelPct: Float? = null,
     val volts: Float? = null,
@@ -19,6 +25,14 @@ data class Readings(
     val milOn: Boolean? = null,
     val faultCount: Int? = null,
 ) {
+    /** Petrol used right now, litres an hour, from the air flow (14.7 parts air to 1 of petrol, 745 g a litre). */
+    val fuelLph: Float?
+        get() = mafGs?.let { it / 14.7f / 745f * 3600f }
+
+    /** Litres per 100 km at this moment, while moving. */
+    val fuelL100: Float?
+        get() = fuelLph?.let { lph -> speedKmh?.takeIf { it > 5 }?.let { lph / it * 100f } }
+
     /** Boost in bar: manifold pressure above the outside air (101.3 kPa when the car doesn't say). */
     val boostBar: Float?
         get() = mapKpa?.let { (it - (baroKpa ?: 101.3f)) / 100f }
@@ -58,6 +72,8 @@ data class ObdState(
 )
 
 /** This drive, worked out from the speed readings while the car answers. */
-data class Trip(val meters: Double = 0.0, val drivingMs: Long = 0, val maxKmh: Float = 0f) {
+data class Trip(val meters: Double = 0.0, val drivingMs: Long = 0, val maxKmh: Float = 0f, val fuelL: Double = 0.0) {
     val avgKmh: Double get() = if (drivingMs > 0) meters / 1000.0 / (drivingMs / 3_600_000.0) else 0.0
+    /** Average consumption this drive, once it's gone far enough to mean something. */
+    val avgL100: Double? get() = if (meters > 500) fuelL / (meters / 1000.0) * 100.0 else null
 }
