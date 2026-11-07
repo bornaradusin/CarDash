@@ -82,6 +82,7 @@ import io.github.bornaradusin.cardash.car.CanScale
 import io.github.bornaradusin.cardash.car.CanState
 import io.github.bornaradusin.cardash.car.CanValue
 import io.github.bornaradusin.cardash.car.CarNotifications
+import io.github.bornaradusin.cardash.car.Doors
 import io.github.bornaradusin.cardash.car.NavInfo
 import io.github.bornaradusin.cardash.car.NowPlaying
 import io.github.bornaradusin.cardash.obd.Link
@@ -408,14 +409,18 @@ private fun RoundGauge(
 @Composable
 private fun CenterPanel(state: DashState, actions: DashActions, modifier: Modifier) {
     val nav = state.nav
+    // Something open beats everything else, then Waze's next turn, then the drive
+    val doors = remember(state.can) { Doors.from(state.can.values) }
     Box(
         modifier
             .clip(RoundedCornerShape(22.dp))
             .background(C.panel)
-            .border(1.dp, if (nav != null) C.redDeep else C.line, RoundedCornerShape(22.dp))
+            .border(1.dp, if (nav != null || doors.anyOpen) C.redDeep else C.line, RoundedCornerShape(22.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        if (nav != null) {
+        if (doors.anyOpen) {
+            DoorsPanel(doors)
+        } else if (nav != null) {
             NavPanel(nav)
             Box(
                 Modifier
@@ -435,6 +440,71 @@ private fun CenterPanel(state: DashState, actions: DashActions, modifier: Modifi
             }
         } else {
             DrivePanel(state.obd, state.canValues[CanRole.RANGE])
+        }
+    }
+}
+
+/** The car from above, with whatever's open swung out in red. */
+@Composable
+private fun DoorsPanel(d: Doors) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(d.describe(), color = C.red, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Canvas(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)) {
+            val h = size.height * 0.92f
+            val w = h * 0.46f
+            val cx = size.width / 2
+            val top = (size.height - h) / 2
+            val left = cx - w / 2
+            val right = cx + w / 2
+            val bottom = top + h
+            val line = 3.dp.toPx()
+            val closed = C.ink2
+            val open = C.red
+            val r = androidx.compose.ui.geometry.CornerRadius(w * 0.3f, w * 0.3f)
+
+            // Body
+            drawRoundRect(C.panelHi, Offset(left, top), Size(w, h), r)
+            drawRoundRect(C.lineHi, Offset(left, top), Size(w, h), r, style = Stroke(line))
+            // Windscreen, roof and rear window
+            val glass = Color(0xFF2A303B)
+            drawRoundRect(glass, Offset(left + w * 0.12f, top + h * 0.30f), Size(w * 0.76f, h * 0.12f), androidx.compose.ui.geometry.CornerRadius(12f, 12f))
+            drawRoundRect(glass, Offset(left + w * 0.14f, top + h * 0.66f), Size(w * 0.72f, h * 0.10f), androidx.compose.ui.geometry.CornerRadius(12f, 12f))
+
+            // Bonnet: the front panel, lifted when open
+            val bonnetH = h * 0.26f
+            if (d.bonnet) {
+                drawRoundRect(open.copy(alpha = 0.25f), Offset(left + w * 0.08f, top - h * 0.05f), Size(w * 0.84f, bonnetH), r)
+                drawRoundRect(open, Offset(left + w * 0.08f, top - h * 0.05f), Size(w * 0.84f, bonnetH), r, style = Stroke(line))
+            } else {
+                drawLine(closed.copy(alpha = 0.5f), Offset(left + w * 0.1f, top + bonnetH), Offset(right - w * 0.1f, top + bonnetH), line / 2)
+            }
+            // Boot
+            val bootTop = bottom - h * 0.16f
+            if (d.boot) {
+                drawRoundRect(open.copy(alpha = 0.25f), Offset(left + w * 0.08f, bootTop + h * 0.05f), Size(w * 0.84f, h * 0.16f), r)
+                drawRoundRect(open, Offset(left + w * 0.08f, bootTop + h * 0.05f), Size(w * 0.84f, h * 0.16f), r, style = Stroke(line))
+            } else {
+                drawLine(closed.copy(alpha = 0.5f), Offset(left + w * 0.1f, bootTop), Offset(right - w * 0.1f, bootTop), line / 2)
+            }
+
+            // A door: hinged at its front edge, swung out 55° when open
+            fun door(leftSide: Boolean, from: Float, to: Float, isOpen: Boolean) {
+                val x = if (leftSide) left else right
+                val len = to - from
+                if (isOpen) {
+                    val a = Math.toRadians(55.0)
+                    val dx = (len * kotlin.math.sin(a)).toFloat() * if (leftSide) -1 else 1
+                    val dy = (len * kotlin.math.cos(a)).toFloat()
+                    drawLine(open.copy(alpha = 0.3f), Offset(x, from), Offset(x + dx, from + dy), line * 4, StrokeCap.Round)
+                    drawLine(open, Offset(x, from), Offset(x + dx, from + dy), line * 1.6f, StrokeCap.Round)
+                } else {
+                    drawLine(closed, Offset(x, from), Offset(x, to), line * 1.6f, StrokeCap.Round)
+                }
+            }
+            door(true, top + h * 0.36f, top + h * 0.62f, d.frontLeft)
+            door(false, top + h * 0.36f, top + h * 0.62f, d.frontRight)
+            if (d.rearLeft) door(true, top + h * 0.62f, top + h * 0.80f, true)
+            if (d.rearRight) door(false, top + h * 0.62f, top + h * 0.80f, true)
         }
     }
 }

@@ -25,6 +25,7 @@ import io.github.bornaradusin.cardash.car.Media
 import io.github.bornaradusin.cardash.car.RadioFiles
 import io.github.bornaradusin.cardash.car.CanRole
 import io.github.bornaradusin.cardash.car.canValues
+import io.github.bornaradusin.cardash.car.effectivePicks
 import io.github.bornaradusin.cardash.ui.CarDash
 import io.github.bornaradusin.cardash.ui.DashActions
 import io.github.bornaradusin.cardash.ui.DashState
@@ -99,7 +100,8 @@ class MainActivity : ComponentActivity() {
             val musicApp by app.settings.musicApp.collectAsState()
             val can by app.can.state.collectAsState()
             val canPicks by app.settings.canPicks.collectAsState()
-            val fromCan = remember(can, canPicks) { canValues(can.values, canPicks) }
+            val usedPicks = remember(can, canPicks) { effectivePicks(can.values, canPicks) }
+            val fromCan = remember(can, usedPicks) { canValues(can.values, usedPicks) }
             // The CAN box's values go where the dashboard shows them; OBD fills in the rest
             val merged = obd.copy(
                 readings = obd.readings.copy(
@@ -128,7 +130,7 @@ class MainActivity : ComponentActivity() {
                 homePresses = homePresses,
                 radioFiles = radioFiles,
                 can = can,
-                canPicks = canPicks,
+                canPicks = usedPicks,
                 canValues = fromCan,
             )
             Scaled { CarDash(state, actions) }

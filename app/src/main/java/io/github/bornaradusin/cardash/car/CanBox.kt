@@ -173,3 +173,59 @@ data class CanPick(val code: Int, val index: Int, val scale: CanScale) {
 /** The dashboard values from the CAN box, from the person's picks. */
 fun canValues(values: Map<Int, CanValue>, picks: Map<CanRole, CanPick>): Map<CanRole, Float> =
     picks.mapNotNull { (role, pick) -> CanBox.read(values, pick.code, pick.index)?.let { role to pick.scale.apply(it) } }.toMap()
+
+/** What's open, from the CAN box's door codes (1 = open). */
+data class Doors(
+    val bonnet: Boolean = false,
+    val frontLeft: Boolean = false,
+    val frontRight: Boolean = false,
+    val rearLeft: Boolean = false,
+    val rearRight: Boolean = false,
+    val boot: Boolean = false,
+) {
+    val anyOpen get() = bonnet || frontLeft || frontRight || rearLeft || rearRight || boot
+
+    /** "Right door open", "Boot and bonnet open"… */
+    fun describe(): String {
+        val open = listOfNotNull(
+            "left door".takeIf { frontLeft }, "right door".takeIf { frontRight },
+            "rear left door".takeIf { rearLeft }, "rear right door".takeIf { rearRight },
+            "boot".takeIf { boot }, "bonnet".takeIf { bonnet },
+        )
+        if (open.isEmpty()) return ""
+        val text = if (open.size == 1) open[0] else open.dropLast(1).joinToString(", ") + " and " + open.last()
+        return text.replaceFirstChar { it.uppercase() } + " open"
+    }
+
+    companion object {
+        /** Codes 0-5 on this CAN box: bonnet, front left, front right, rear left, rear right, boot. */
+        fun from(values: Map<Int, CanValue>): Doors {
+            fun open(code: Int) = values[code]?.ints?.firstOrNull() == 1
+            return Doors(open(0), open(1), open(2), open(3), open(4), open(5))
+        }
+    }
+}
+
+/**
+ * Where this CAN box (the syu one in the TT's radio) puts what, used until the person picks
+ * otherwise: the same order as the radio's Vehicle settings screen. Only used when the value looks
+ * right, so a radio with another layout doesn't get nonsense.
+ */
+val defaultCanPicks: Map<CanRole, Pair<CanPick, (Float) -> Boolean>> = mapOf(
+    CanRole.COOLANT to (CanPick(7, 0, CanScale.MINUS40) to { v: Float -> v in -40f..150f }),
+    CanRole.OIL to (CanPick(8, 0, CanScale.MINUS40) to { v: Float -> v in -40f..170f }),
+    CanRole.BATTERY to (CanPick(9, 0, CanScale.DIV10) to { v: Float -> v in 8f..16f }),
+    CanRole.ODOMETER to (CanPick(10, 0, CanScale.AS_IS) to { v: Float -> v in 1f..3_000_000f }),
+)
+
+/** The person's picks, plus the usual codes for anything not picked whose value looks right. */
+fun effectivePicks(values: Map<Int, CanValue>, picks: Map<CanRole, CanPick>): Map<CanRole, CanPick> {
+    val out = picks.toMutableMap()
+    defaultCanPicks.forEach { (role, def) ->
+        if (role in out) return@forEach
+        val (pick, plausible) = def
+        val v = CanBox.read(values, pick.code, pick.index)?.let { pick.scale.apply(it) } ?: return@forEach
+        if (plausible(v)) out[role] = pick
+    }
+    return out
+}
