@@ -19,29 +19,42 @@ object RoadInfo {
     /** The main OpenStreetMap server and two public copies of it: the main one is often busy. */
     private val OVERPASS = listOf(
         "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter",
         "https://overpass.private.coffee/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
     )
     const val RADIUS_M = 1_500
 
+    /** Roads a car drives on: footpaths, tracks and the like left out, so the answer is small and quick. */
+    private const val DRIVEN = "motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|" +
+        "motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|road"
+
+    /** Why the last try got nothing, from each server in turn. */
+    class Failed(message: String) : java.io.IOException(message)
+
     suspend fun around(p: Pos): RoadArea {
         val at = String.format(Locale.US, "%d,%.6f,%.6f", RADIUS_M, p.lat, p.lon)
-        val q = "[out:json][timeout:20];(way(around:$at)[highway][maxspeed];node(around:$at)[highway=traffic_signals];);out geom;"
+        val q = "[out:json][timeout:25];(way(around:$at)[highway~\"^($DRIVEN)$\"][maxspeed];node(around:$at)[highway=traffic_signals];);out geom;"
         val data = URLEncoder.encode(q, "UTF-8")
-        var last: Exception? = null
+        val why = ArrayList<String>()
         var answer: String? = null
         for (server in OVERPASS) {
             answer = try {
-                Http.get("$server?data=$data", 15_000)
+                Http.get("$server?data=$data", 25_000)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                last = e
+                why += "${java.net.URI(server).host}: ${e.message ?: e.javaClass.simpleName}"
                 null
             }
             if (answer != null) break
         }
-        val json = JSONObject(answer ?: throw last ?: java.io.IOException("No answer"))
+        val text = answer ?: throw Failed(why.joinToString("; "))
+        // A big town is a lot of road: read it off the main thread
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { parse(p, text) }
+    }
+
+    private fun parse(p: Pos, text: String): RoadArea {
+        val json = JSONObject(text)
         val els = json.optJSONArray("elements") ?: return RoadArea(p, emptyList(), emptyList())
         val roads = ArrayList<LimitedRoad>()
         val signals = ArrayList<Pos>()

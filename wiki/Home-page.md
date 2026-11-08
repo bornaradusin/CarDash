@@ -14,7 +14,8 @@ The page CarDash opens on, and the one the radio's Home button brings you back t
 ## The dials
 
 - **RPM**, with the gear you're in big in the middle, and the coolant temperature as a number and a small arc low in the dial. The red zone is drawn like the TT's own: a thin red line along the ends of the ticks from 4,500, with close-set dashes just before it.
-- **Change up / change down**: the gear lever icons in the empty corners at the top, between the big dials and the middle box: change down on the left, change up on the right. They only appear when it's time to change, set for the TT's 2.0 TDI: change up at 2,000 rpm (2,500 with the pedal past half way), so the next gear lands back where the engine makes its most torque, 1,750 to 2,500 rpm, and never into fewer than 1,500 rpm; change down under 1,300 rpm with your foot down, or under 1,100 rpm on the pedal at all, where a diesel starts to judder and the dual-mass flywheel takes the strain. Nothing shows while you roll with the engine at tickover (clutch down or in neutral): CarDash sees the revs stop following the speed, and the gear shows – until you're back in gear. Off the pedal there's no change down either, when the car reports the pedal: low revs only strain the engine under load. Turn them off in **Settings › Gear**.
+- **Change up / change down**: the gear lever icons in the empty corners at the top, between the big dials and the middle box: change down on the left, change up on the right. They only appear when it's time to change, at the points you set gear by gear in **Settings › Driving › Change up / down signs**. The suggested ones suit the TT's 2.0 TDI: change up at 2,000 rpm (later in 1st to 3rd, so the next gear lands at 1,500 or more, where the engine pulls well), change down under 1,100 rpm, where a diesel judders and the dual-mass flywheel takes the strain. With the pedal past half way, change up waits 500 rpm more; with your foot well down, change down comes 200 rpm sooner. Nothing shows while you roll with the engine at tickover (clutch down or in neutral): CarDash sees the revs stop following the speed, and the gear shows – until you're back in gear. Off the pedal there's no change down either, when the car reports the pedal.
+- **The speed limit** on the road you're on, top right, and **traffic lights ahead** with how far, top left, when OpenStreetMap has them: see [Navigation](Navigation#speed-limits-and-traffic-lights).
 - **The gear** is worked out, as the car doesn't send it: in each gear the engine turns a fixed number of rpm per km/h, and CarDash learns those figures as you drive. It shows once it has found every gear, or every gear but 1st or top (drive a few seconds in each); between gears, with the clutch down or coasting, it shows "–". The number of gears and **Learn the gears again** are in **Settings › Gear**.
 - **Speed**, with the car's odometer under it once the [CAN box](Radios-CAN-box) gives it (until then, this drive's distance).
 
@@ -42,6 +43,12 @@ A figure the car doesn't report shows "–". See [Navigation](Navigation) for ro
 Over whatever view is on: the TT from above, with what's open in the accent colour, and what's open in words ("Right door open").
 
 ![The right door open](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/door-open.gif)
+
+## The map dash
+
+**Swipe up or down on the left of the screen** (over the RPM dial) to swap the dials for the map dash, and again to come back. The middle box keeps its own swipe.
+
+The 3D map fills the whole middle, turning with the car. On it: the next turn big, top left, with the one after it; arriving, minutes left and distance to go, top right, with **Mute** and **End route**; your speed with the speed limit and the traffic lights ahead, bottom left; and the gear, revs, oil, boost and fuel, bottom right. Without a route it shows the street you're on and **Where to?**.
 
 ## Along the bottom
 

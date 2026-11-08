@@ -353,9 +353,122 @@ internal fun MapPanel(state: DashState, actions: DashActions, onSearch: () -> Un
     }
 }
 
+// ---------- the map dash ----------
+
+/**
+ * The map dash, swiped to up or down on the left of Home: the 3D map across the whole middle, and on
+ * it the next turn (and the one after), arriving, the speed with the limit and any traffic lights
+ * ahead, and a strip with the gear, revs, oil, boost and fuel.
+ */
+@Composable
+internal fun MapDash(state: DashState, actions: DashActions, openSearch: () -> Unit, modifier: Modifier = Modifier) {
+    val nav = state.nav
+    val r = state.obd.readings
+    val step = nav.nextStep
+    val shape = RoundedCornerShape(20.dp)
+    val panel = Modifier.clip(shape).background(C.panel.copy(alpha = 0.9f)).border(1.dp, C.line, shape)
+    Box(modifier.fillMaxSize()) {
+        NavMap(nav, Modifier.fillMaxSize())
+        // Top left: the next turn and the one after, or what's happening
+        Box(Modifier.align(Alignment.TopStart).padding(16.dp).widthIn(max = 380.dp)) {
+            when {
+                nav.route != null && step != null -> Column(panel.padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        TurnBox(turnIcon(step), null, 64)
+                        Column {
+                            Text(Geo.distanceText(nav.toNextM), color = C.ink, fontSize = 40.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic, maxLines = 1)
+                            Text(step.road() ?: step.text(), color = C.ink2, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    nav.afterStep?.let { after ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Then", color = C.muted, fontSize = 16.sp)
+                            Icon(turnIcon(after), null, tint = C.muted, modifier = Modifier.size(20.dp))
+                            Text(after.road() ?: after.text(), color = C.muted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                nav.destination != null -> Chip(nav.error ?: "Planning the route…")
+                !nav.permission -> Chip("Allow location for the map")
+                !nav.located -> Chip("Finding the GPS…")
+                nav.street != null -> Box(panel.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text(nav.street, color = C.ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        // Top right: when you'll get there, mute and end; or Where to?
+        Column(Modifier.align(Alignment.TopEnd).padding(16.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (nav.route != null) {
+                Row(panel.padding(horizontal = 18.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Figure(arriveAt(nav.leftS), "arrive")
+                    Figure(minutes(nav.leftS), "left")
+                    Figure(Geo.distanceText(nav.leftM), "to go")
+                }
+                RoundIconButton(if (nav.muted) Ic.muted else Ic.volume, if (nav.muted) "Sound on" else "Mute", actions.toggleMute)
+                RoundIconButton(Ic.close, "End the route", actions.endRoute)
+            } else if (nav.permission && nav.destination == null) {
+                WhereToButton(openSearch)
+            }
+        }
+        // Bottom left: the speed, the limit, and the lights ahead
+        val kmh = r.speedKmh ?: (nav.speed * 3.6f)
+        Row(
+            Modifier.align(Alignment.BottomStart).padding(16.dp).then(panel).padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column {
+                Text("${kmh.toInt()}", color = C.ink, fontSize = 56.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic, maxLines = 1)
+                Text("km/h", color = C.muted, fontSize = 15.sp)
+            }
+            nav.limit?.let { SpeedSign(it, kmh > it + 2) }
+            nav.signalAheadM?.let { LightsAhead(it) }
+        }
+        // Bottom right: the car
+        Row(
+            Modifier.align(Alignment.BottomEnd).padding(16.dp).then(panel).padding(horizontal = 22.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(22.dp),
+        ) {
+            Text(state.gear?.toString() ?: "–", color = if (state.gear == null) C.muted else C.ink, fontSize = 44.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+            DashFigure(r.rpm?.let { "%,d".format(java.util.Locale.UK, it.toInt()) }, "rpm")
+            if (r.oilC != null) DashFigure("${r.oilC.toInt()}", "oil °C") else DashFigure(r.coolantC?.let { "${it.toInt()}" }, "water °C")
+            DashFigure(r.boostBar?.let { fmt(it, 1) }, "boost bar")
+            DashFigure(r.fuelL100?.let { fmt(it, 1) } ?: r.fuelLph?.let { fmt(it, 1) }, if (r.fuelL100 != null) "L/100" else "L/h")
+        }
+    }
+}
+
+@Composable
+private fun DashFigure(value: String?, name: String) {
+    Column {
+        Text(value ?: "–", color = C.ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(name, color = C.muted, fontSize = 12.sp)
+    }
+}
+
+/** Traffic lights ahead on the road: a small set of lights and how far. */
+@Composable
+internal fun LightsAhead(m: Int, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF14171D)).border(1.5.dp, C.lineHi, RoundedCornerShape(8.dp)).padding(5.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            listOf(Color(0xFFFF3B3B), Color(0xFFFFB020), Color(0xFF2ED47A)).forEach {
+                Box(Modifier.size(11.dp).clip(CircleShape).background(it))
+            }
+        }
+        Column {
+            Text("$m m", color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text("lights ahead", color = C.muted, fontSize = 12.sp)
+        }
+    }
+}
+
 /** A round speed-limit sign as on Irish roads: white, red ring, the number in black. */
 @Composable
-private fun SpeedSign(limit: Int, over: Boolean, modifier: Modifier = Modifier) {
+internal fun SpeedSign(limit: Int, over: Boolean, modifier: Modifier = Modifier) {
     Box(
         modifier.size(64.dp).clip(CircleShape).background(if (over) Color(0xFFFFD9DC) else Color.White)
             .border(7.dp, Color(0xFFE3061A), CircleShape),
@@ -726,6 +839,18 @@ internal fun NavigationCard(state: DashState, actions: DashActions) {
         }
         if (editingKey) GoogleKeyDialog(state.googleKey, onSave = { actions.setGoogleKey(it); editingKey = false }, onDismiss = { editingKey = false })
         Text("Google Maps' turns show in the middle box while it navigates (needs notification access).", color = C.muted, fontSize = 14.sp)
+        // Where the speed limits and traffic lights stand: what came back, or why not
+        Column {
+            Text("Speed limits and traffic lights", color = C.ink, fontSize = 17.sp)
+            Text(
+                state.nav.roadsStatus ?: if (state.nav.located) "Asking OpenStreetMap…" else "Waiting for a GPS position",
+                color = if (state.nav.roadsStatus?.startsWith("Couldn't") == true) C.red else C.muted, fontSize = 14.sp, lineHeight = 20.sp,
+            )
+            Text(
+                "Shown on the main dash's top corners, the map dash and the maps, where OpenStreetMap has them: a road without a limit in OpenStreetMap shows none.",
+                color = C.muted, fontSize = 13.sp, lineHeight = 18.sp,
+            )
+        }
     }
 }
 

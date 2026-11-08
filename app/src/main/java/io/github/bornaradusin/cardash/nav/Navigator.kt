@@ -48,6 +48,10 @@ data class NavState(
     val limit: Int? = null,
     /** Traffic lights around the car. */
     val signals: List<Pos> = emptyList(),
+    /** The nearest traffic lights ahead on the way the car is going, metres, within 500 m. */
+    val signalAheadM: Int? = null,
+    /** How getting the speed limits and traffic lights went, for Settings: what came back, or why not. */
+    val roadsStatus: String? = null,
     /** On a route: the car's place on the route line (GPS is a few metres out), and the route's direction there. */
     val onRoute: Pos? = null,
     val routeHeading: Float? = null,
@@ -131,18 +135,41 @@ class Navigator(private val context: Context, private val spokenOn: () -> Boolea
         val a = area
         if (a != null) {
             val limit = RoadInfo.limitAt(a, here, heading)
-            if (limit != _state.value.limit) _state.update { it.copy(limit = limit) }
+            val ahead = signalAhead(a.signals, here, heading)
+            if (limit != _state.value.limit || ahead != _state.value.signalAheadM) _state.update { it.copy(limit = limit, signalAheadM = ahead) }
         }
         val near = a != null && Geo.distance(a.centre, here) < RoadInfo.RADIUS_M - 600
         val now = System.currentTimeMillis()
         if (near || areaJob?.isActive == true || now - areaTried < 30_000) return
         areaTried = now
         areaJob = scope.launch {
-            runCatching { RoadInfo.around(here) }.onSuccess { fresh ->
-                area = fresh
-                _state.update { it.copy(signals = fresh.signals, limit = RoadInfo.limitAt(fresh, here, heading)) }
-            }
+            runCatching { RoadInfo.around(here) }
+                .onSuccess { fresh ->
+                    area = fresh
+                    val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.UK).format(java.util.Date())
+                    val status = "Got speed limits on ${fresh.roads.size} roads and ${fresh.signals.size} traffic lights within " +
+                        "${RoadInfo.RADIUS_M / 1000.0} km at $clock, from OpenStreetMap"
+                    _state.update {
+                        it.copy(signals = fresh.signals, limit = RoadInfo.limitAt(fresh, here, heading),
+                            signalAheadM = signalAhead(fresh.signals, here, heading), roadsStatus = status)
+                    }
+                }
+                .onFailure { e ->
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    _state.update { it.copy(roadsStatus = "Couldn't get speed limits and traffic lights (trying again in 30 s): ${e.message ?: e.javaClass.simpleName}") }
+                }
         }
+    }
+
+    /** The nearest lights in front of the car: within 500 m and 25 degrees either side of the way it's going. */
+    private fun signalAhead(signals: List<Pos>, here: Pos, heading: Float?): Int? {
+        heading ?: return null
+        return signals.mapNotNull { p ->
+            val d = Geo.distance(here, p)
+            if (d < 8 || d > 500) return@mapNotNull null
+            val off = Math.abs(((Geo.bearing(here, p) - heading + 540.0) % 360.0) - 180.0)
+            if (off <= 25.0) d else null
+        }.minOrNull()?.let { (Math.round(it / 10.0) * 10).toInt() }
     }
 
     // ---------- routes ----------

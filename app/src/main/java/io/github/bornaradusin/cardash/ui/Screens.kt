@@ -12,6 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,6 +65,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.key
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -84,6 +87,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
@@ -317,6 +322,8 @@ fun CarDash(state: DashState, actions: DashActions) {
     var settings by remember { mutableStateOf(false) }
     var whereTo by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
+    /** The map dash in Home's place, swiped to on the left of the screen. */
+    var mapDash by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.homePresses) {
         settings = false
@@ -356,7 +363,7 @@ fun CarDash(state: DashState, actions: DashActions) {
                         PAGE_APPS -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
                             AppsScreen(state.apps, actions)
                         }
-                        PAGE_HOME -> Home(state, actions, centre, openSearch) { scope.launch { pager.animateScrollToPage(PAGE_APPS) } }
+                        PAGE_HOME -> Home(state, actions, centre, openSearch, mapDash, { mapDash = it }) { scope.launch { pager.animateScrollToPage(PAGE_APPS) } }
                         PAGE_SERVICE -> ServicePage(state.service, actions)
                         else -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
                             Gauges(state.obd, state.canValues, state.gear, actions)
@@ -691,13 +698,23 @@ private fun NameDialog(name: String, onSave: (String) -> Unit, onDismiss: () -> 
 // ---------- home ----------
 
 @Composable
-private fun Home(state: DashState, actions: DashActions, centre: PagerState, openSearch: () -> Unit, allApps: () -> Unit) {
+private fun Home(
+    state: DashState, actions: DashActions, centre: PagerState, openSearch: () -> Unit,
+    mapDash: Boolean, setMapDash: (Boolean) -> Unit, allApps: () -> Unit,
+) {
     val r = state.obd.readings
     val doors = remember(state.can) { Doors.from(state.can.values) }
     // The big map takes the RPM dial's place (its own view, route or not); an open door shows over it
     val big = centre.currentPage == VIEW_BIG_MAP && !doors.anyOpen
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        // Up or down on the left of the screen: the main dash or the map dash (the middle box keeps its own swipe)
+        val swipe = Modifier.leftSwipe(LEFT_SWIPE) { setMapDash(!mapDash) }
+        if (mapDash) {
+            MapDash(state, actions, openSearch, Modifier.weight(1f).fillMaxWidth().then(swipe))
+            BottomBar(state, actions, allApps)
+            return@Column
+        }
+        Box(Modifier.weight(1f).fillMaxWidth().then(swipe)) {
             // The box and the small gauges end just above the bottom bar; the dials are centred
             Row(
                 Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
@@ -730,11 +747,51 @@ private fun Home(state: DashState, actions: DashActions, centre: PagerState, ope
                 Box(Modifier.align(Alignment.CenterVertically).offset(y = 5.dp)) { SpeedDial(r, state.obd.trip.meters, DIAL) }
             }
             ShiftHintIcons(state, big)
+            // The speed limit (top right) and traffic lights ahead (top left), in the corners over the dials
+            state.nav.limit?.let { limit ->
+                val kmh = r.speedKmh ?: (state.nav.speed * 3.6f)
+                SpeedSign(limit, kmh > limit + 2, Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 14.dp))
+            }
+            state.nav.signalAheadM?.let { LightsAhead(it, Modifier.align(Alignment.TopStart).padding(top = 10.dp, start = 16.dp)) }
         }
         BottomBar(state, actions, allApps)
     }
 }
 
+
+/** How far in from the left a swipe up or down switches between the main dash and the map dash. */
+private val LEFT_SWIPE = 300.dp
+
+/**
+ * A swipe up or down that starts within [zone] of the left edge calls [onSwipe]. It only takes over
+ * once the finger is clearly going up or down, so taps and sideways swipes (the pages) go on as before,
+ * and the middle box's own swipe isn't touched outside the zone.
+ */
+private fun Modifier.leftSwipe(zone: Dp, onSwipe: () -> Unit): Modifier = pointerInput(Unit) {
+    val zonePx = zone.toPx()
+    val need = 60.dp.toPx()
+    val slop = viewConfiguration.touchSlop
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        if (down.position.x > zonePx) return@awaitEachGesture
+        var claimed = false
+        var dx = 0f
+        var dy = 0f
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            val d = change.positionChange()
+            dx += d.x
+            dy += d.y
+            if (!claimed && abs(dy) > slop && abs(dy) > abs(dx) * 1.5f) claimed = true
+            if (claimed) change.consume()
+            if (!change.pressed) {
+                if (claimed && abs(dy) > need) onSwipe()
+                break
+            }
+        }
+    }
+}
 
 @Composable
 private fun SmallGauges(r: Readings) {

@@ -58,7 +58,9 @@ The middle box's last view is the big map: the map takes the RPM dial's place to
 
 ## Speed limits and traffic lights
 
-On the map, a round **speed-limit sign** shows the limit on the road you're on; it turns red inside once you're more than 2 km/h over. **Traffic lights** stand on the map where they are. Both come from OpenStreetMap (the Overpass API), fetched for the area around you as you drive. In Ireland the limits are well mapped on main roads and in towns; where a road has no limit in OpenStreetMap, the sign just doesn't show.
+A round **speed-limit sign** shows the limit on the road you're on: top right on the main dash, by the speed on the map dash, and on the maps. It turns red inside once you're more than 2 km/h over. **Traffic lights** stand on the maps where they are, and the nearest set ahead of you (within 500 m) shows with its distance: top left on the main dash, and by the speed on the map dash. Both come from OpenStreetMap (the Overpass API), fetched for 1.5 km around you as you drive. Where a road has no limit in OpenStreetMap, the sign just doesn't show.
+
+**Settings › Navigation › Speed limits and traffic lights** says how the last try went: how many roads with limits and traffic lights it got, or why it got none (the servers busy or unreachable, with the error from each). If nothing ever shows, that line says why.
 
 The roads are drawn lighter than the dark map, with white edges, so they stand out at a glance, and the buildings stand on the streets in 3D.
 

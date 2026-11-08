@@ -60,6 +60,7 @@ object Ic {
     val plus = icon("plus", "M12 5v14", "M5 12h14")
     val minus = icon("minus", "M5 12h14")
     val back = icon("back", "M15 18l-6-6 6-6")
+    val close = icon("close", "M6 6l12 12", "M18 6L6 18")
 
     // Navigation
     val search = icon("search", circle(10.5f, 10.5f, 6.5f), "M15.5 15.5L21 21")
