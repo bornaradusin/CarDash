@@ -708,7 +708,7 @@ private fun SwitchRow(title: String, sub: String, checked: Boolean, onChange: (B
 internal fun NavigationCard(state: DashState, actions: DashActions) {
     Card("Navigation") {
         SwitchRow("Spoken directions", "\"In 300 m, turn right\", in the radio's voice", state.spoken, actions.setSpoken)
-        SwitchRow("Big map on a route", "While a route is set, the map takes the RPM dial's place", state.bigMap, actions.setBigMap)
+        SwitchRow("Big map on a route", "Starting a route shows the big map, in the RPM dial's place too, instead of the map in the box", state.bigMap, actions.setBigMap)
         var editingKey by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.weight(1f)) {

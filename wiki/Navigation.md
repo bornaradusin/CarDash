@@ -40,11 +40,11 @@ To be sure it never costs anything, set the Geocoding API's daily limit to a few
 
 ## On a route
 
-The middle box switches to the map, tilted and turning with the car, the route in the accent colour and an arrow at the next turn. On top: the next turn and how far. Underneath: when you'll arrive, the time left and the distance to go.
+The middle box switches to the map (the big map with **Settings › Navigation › Big map on a route** on), tilted and turning with the car, the route in the accent colour and an arrow at the next turn. On top: the next turn and how far. Underneath: when you'll arrive, the time left and the distance to go.
 
 ![On a route: the 3D map in the middle box follows the car through a right turn, slowing and changing down for it, while the directions count down](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/map.gif)
 
-Swipe the middle box down to **Directions** for the next turn big, the one after it, and **End route**.
+Swipe the middle box to **Directions** for the next turn big, the one after it, and **End route**.
 
 - **Spoken directions**: "In 300 metres, turn right onto Main Street", then again at the turn, in the radio's voice. The speaker button mutes them; tap it again for sound. Turn them off altogether in **Settings › Navigation**.
 - **Off the route**: CarDash plans a new one from where you are.
@@ -52,7 +52,7 @@ Swipe the middle box down to **Directions** for the next turn big, the one after
 
 ### Big map
 
-With **Settings › Navigation › Big map on a route** on, the map takes the RPM dial's place while you're on a route and the map is showing. Under it, six small gauges instead of four: RPM and coolant join oil, boost, intake air and battery. Swipe the middle box to another view, or end the route, and Home goes back to normal.
+The middle box's last view is the big map: the map takes the RPM dial's place too, on a route or not. Under it, six small gauges instead of four: RPM and coolant join oil, boost, intake air and battery. Swipe the middle box to another view and Home goes back to normal. With **Settings › Navigation › Big map on a route** on, starting a route goes straight to it; otherwise to the map in the box.
 
 ![The big map on a route: the car takes the right turn and the map turns with it](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/big-map.gif)
 

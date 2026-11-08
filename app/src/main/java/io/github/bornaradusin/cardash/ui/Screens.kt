@@ -288,11 +288,13 @@ private const val PAGE_GAUGES = 2
 private const val PAGE_SERVICE = 3
 private const val PAGES = 4
 
-/** What the middle box on Home shows, swiped up and down. */
+/** What the middle box on Home shows, swiped up and down: the drive's figures, the map in the box, the
+ * directions alone, and the big map in the RPM dial's place too (each map with or without a route). */
 internal const val VIEW_CAR = 0
-internal const val VIEW_DIRECTIONS = 1
-internal const val VIEW_MAP = 2
-private const val VIEWS = 3
+internal const val VIEW_MAP = 1
+internal const val VIEW_DIRECTIONS = 2
+internal const val VIEW_BIG_MAP = 3
+private const val VIEWS = 4
 
 /** Four pages to swipe between (all apps, Home, gauges, service), and Settings from the gear. */
 @Composable
@@ -313,7 +315,8 @@ fun CarDash(state: DashState, actions: DashActions) {
     // A route starts: show the map
     val routing = state.nav.destination != null
     LaunchedEffect(routing) {
-        if (routing && centre.currentPage == VIEW_CAR) centre.animateScrollToPage(VIEW_MAP)
+        // Big map on a route (Settings): the big map, else the map in the box
+        if (routing && centre.currentPage == VIEW_CAR) centre.animateScrollToPage(if (state.bigMap) VIEW_BIG_MAP else VIEW_MAP)
     }
     val openSearch = { settings = false; whereTo = true }
 
@@ -675,8 +678,8 @@ private fun NameDialog(name: String, onSave: (String) -> Unit, onDismiss: () -> 
 private fun Home(state: DashState, actions: DashActions, centre: PagerState, openSearch: () -> Unit, allApps: () -> Unit) {
     val r = state.obd.readings
     val doors = remember(state.can) { Doors.from(state.can.values) }
-    // On a route with the map showing, the map can take the RPM dial's place (Settings)
-    val big = state.bigMap && state.nav.route != null && centre.currentPage == VIEW_MAP && !doors.anyOpen
+    // The big map takes the RPM dial's place (its own view, route or not); an open door shows over it
+    val big = centre.currentPage == VIEW_BIG_MAP && !doors.anyOpen
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // The box and the small gauges end just above the bottom bar; the dials are centred
@@ -855,6 +858,7 @@ private fun CenterPanel(
             VerticalPager(centre, Modifier.fillMaxSize()) { view ->
                 when (view) {
                     VIEW_CAR -> Box(Modifier.fillMaxSize().padding(12.dp)) { DrivePanel(state.obd, state.canValues[CanRole.RANGE]) }
+                    VIEW_MAP -> Box(Modifier.fillMaxSize().padding(6.dp)) { MapPanel(state, actions, openSearch, false) }
                     VIEW_DIRECTIONS -> Box(Modifier.fillMaxSize().padding(12.dp)) { DirectionsPanel(state, actions, openSearch) }
                     else -> Box(Modifier.fillMaxSize().padding(6.dp)) { MapPanel(state, actions, openSearch, wide) }
                 }

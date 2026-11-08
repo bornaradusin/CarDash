@@ -29,8 +29,9 @@ Swipe it up or down to change what it shows; the dots on its right edge show whi
 1. **Car info**: this drive and the engine.
    - Bars for the accelerator pedal, engine load, boost and fuel use (L/100 km while moving, L/h standing still)
    - The average fuel use, fuel used, highest boost, distance, average and top speed, highest RPM, the car's range (or the air flow, if the car doesn't give range) and how long you've been driving
-2. **Directions**: on a route, the next turn filling the box (the arrow big in the middle, how far and what to do), the one after it, when you'll arrive, **End route** and the mute button. While Google Maps navigates, its next turn the same way. Otherwise, **Where to?**.
-3. **3D map**: tilted and turning with the car, with the speed limit and traffic lights. On a route, the route and the next turn; without one, the street you're on, across the top, and **Where to?**.
+2. **Map**: the 3D map in the box, tilted and turning with the car, with the speed limit and traffic lights. On a route, the route and the next turn; without one, the street you're on, across the top, and **Where to?**.
+3. **Directions**: on a route, the next turn filling the box (the arrow big in the middle, how far and what to do), the one after it, when you'll arrive, **End route** and the mute button. While Google Maps navigates, its next turn the same way. Otherwise, **Where to?**.
+4. **Big map**: the same map in the RPM dial's place too, with six small gauges under it (RPM and coolant join the others), on a route or not. See [Big map](Navigation#big-map).
 
 ![The middle box: car info, directions (CarDash's and Google Maps'), the 3D map](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/middle-box.gif)
 
