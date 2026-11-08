@@ -8,7 +8,7 @@
 1. Download the APK from [Releases](https://github.com/bornaradusin/CarDash/releases) and install it on the radio. Each new version installs over the last one, keeping your settings.
 2. Plug the OBD dongle into the radio's USB port. Android asks which app should use it: pick **CarDash** and tick **Always open CarDash**. From then on, plugging it in opens CarDash, which uses it without asking.
 3. Open **Settings** (the gear, top right) and, under **Permissions**, allow **Notification access** (Google Maps' next turn and the music controls) and **Location** (the map and directions).
-4. Optional: **Settings › Screen › Make CarDash the home screen**, then choose CarDash.
+4. **Settings › Screen › Make CarDash the home screen**, then choose CarDash. Until it is, CarDash says so when it opens, with a button that does the same.
 5. Long-press each app button on Home to choose its app and its icon.
 6. Swipe to the [Service](Service) page and tap each item to fill in when it was last done.
 

@@ -74,8 +74,15 @@ class MainActivity : ComponentActivity() {
                 startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             },
             chooseHome = {
-                runCatching { startActivity(Intent(AndroidSettings.ACTION_HOME_SETTINGS)) }
-                    .onFailure { startActivity(Intent(AndroidSettings.ACTION_SETTINGS)) }
+                // Android's own "use as the home app?" where it has one (10 and later), else Home settings
+                val roles = if (android.os.Build.VERSION.SDK_INT >= 29) getSystemService(android.app.role.RoleManager::class.java) else null
+                val asked = android.os.Build.VERSION.SDK_INT >= 29 && roles != null &&
+                    roles.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME) &&
+                    runCatching { startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME)) }.isSuccess
+                if (!asked) {
+                    runCatching { startActivity(Intent(AndroidSettings.ACTION_HOME_SETTINGS)) }
+                        .onFailure { startActivity(Intent(AndroidSettings.ACTION_SETTINGS)) }
+                }
             },
             setName = { app.settings.setName(it) },
             setFullScreen = {
@@ -254,6 +261,7 @@ class MainActivity : ComponentActivity() {
                 icons = icons,
                 musicApp = musicApp,
                 hasNotifications = remember(resumes) { CarNotifications.allowed(this@MainActivity) },
+                isHomeApp = remember(resumes) { isHomeApp() },
                 fullScreen = fullScreen,
                 homePresses = homePresses,
                 diesel = diesel,
@@ -283,6 +291,19 @@ class MainActivity : ComponentActivity() {
             )
             Scaled { CarKeyboardHost { CarDash(state, actions) } }
         }
+    }
+
+    /** Whether CarDash is the radio's home app, which the Home button and starting the radio open. */
+    private fun isHomeApp(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val roles = getSystemService(android.app.role.RoleManager::class.java)
+            if (roles != null && roles.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME))
+                return roles.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)
+        }
+        val home = packageManager.resolveActivity(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), android.content.pm.PackageManager.MATCH_DEFAULT_ONLY,
+        )
+        return home?.activityInfo?.packageName == packageName
     }
 
     override fun onResume() {

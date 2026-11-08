@@ -142,6 +142,8 @@ data class DashState(
     /** The chosen music player; null = YouTube Music. */
     val musicApp: String?,
     val hasNotifications: Boolean,
+    /** CarDash is the radio's home app (the Home button and starting the radio open it). */
+    val isHomeApp: Boolean = true,
     val fullScreen: Boolean,
     /** Goes up each time the radio's Home button is pressed: back to the Home page. */
     val homePresses: Int,
@@ -351,6 +353,9 @@ fun CarDash(state: DashState, actions: DashActions) {
         }
     }
     if (naming) NameDialog(state.name, onSave = { actions.setName(it); naming = false }, onDismiss = { naming = false })
+    // Not the home app: says so, with the fix; Not now waits for the next time CarDash is opened
+    var homeLater by remember { mutableStateOf(false) }
+    if (!state.isHomeApp && !homeLater && !settings) HomeAppNotice(onFix = actions.chooseHome, onLater = { homeLater = true })
     // Something due: a reminder, except on the Service page itself and in Settings
     if (!settings && !whereTo && pager.currentPage != PAGE_SERVICE) {
         ServiceReminder(state.service, actions) { scope.launch { pager.animateScrollToPage(PAGE_SERVICE) } }
@@ -360,6 +365,29 @@ fun CarDash(state: DashState, actions: DashActions) {
     val speedy = state.speedWarnOn && (state.obd.readings.speedKmh ?: 0f) > state.speedWarnKmh - 5
     if (state.shiftWarnOn && !speedy) ShiftWarning(state.obd.readings.rpm, state.obd.readings.speedKmh, state.shiftWarnRpm, state.topGear, actions.setTopGear)
     if (state.speedWarnOn) SpeedWarning(state.obd.readings.speedKmh, state.speedWarnKmh)
+}
+
+/** CarDash isn't the radio's home app: the Home button and starting the radio open another one. */
+@Composable
+private fun HomeAppNotice(onFix: () -> Unit, onLater: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onLater, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(
+            Modifier.width(620.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)
+                .padding(start = 28.dp, end = 28.dp, top = 26.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("CarDash isn't the home screen", color = C.ink, fontSize = 26.sp)
+            Text(
+                "The radio's Home button and starting the radio open another app. Make CarDash the home app, " +
+                    "so it's there every time the radio starts.",
+                color = C.muted, fontSize = 16.sp, lineHeight = 22.sp,
+            )
+            Wide("Make CarDash the home screen") { onFix() }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                androidx.compose.material3.TextButton(onClick = onLater) { Text("Not now", color = C.ink2, fontSize = 15.sp) }
+            }
+        }
+    }
 }
 
 /**
