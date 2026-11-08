@@ -169,6 +169,8 @@ fun CarKeyboard(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val kind = (editor?.inputType ?: 0) and InputType.TYPE_MASK_CLASS
     val numbers = kind == InputType.TYPE_CLASS_NUMBER || kind == InputType.TYPE_CLASS_PHONE
+    // A box for a number with a fraction (0.8 L/h) gets a point key
+    val decimal = kind == InputType.TYPE_CLASS_NUMBER && ((editor?.inputType ?: 0) and InputType.TYPE_NUMBER_FLAG_DECIMAL) != 0
     val action = (editor?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
     val actionLabel = when (action) {
         EditorInfo.IME_ACTION_SEARCH -> "Search"
@@ -193,7 +195,7 @@ fun CarKeyboard(modifier: Modifier = Modifier) {
         val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.primaryClip ?: return
         if (clip.itemCount == 0) return
         val text = clip.getItemAt(0).coerceToText(context)?.toString()?.trim().orEmpty()
-        if (text.isNotEmpty()) ic.commitText(if (numbers) text.filter { it.isDigit() } else text, 1)
+        if (text.isNotEmpty()) ic.commitText(if (numbers) text.filter { it.isDigit() || (decimal && (it == '.' || it == ',')) } else text, 1)
     }
     fun act() {
         if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) ic.performEditorAction(action)
@@ -212,6 +214,7 @@ fun CarKeyboard(modifier: Modifier = Modifier) {
             // One row across: big keys, and it leaves the box being typed in plenty of room above
             KeyRow {
                 "1234567890".forEach { c -> Key(c.toString(), Modifier.weight(1f)) { type(c.toString()) } }
+                if (decimal) Key(".", Modifier.weight(1f)) { type(".") }
                 Key(null, Modifier.weight(1.5f), icon = Ic.backspace, look = KeyLook.Special, repeat = true) { backspace() }
                 Key(actionLabel, Modifier.weight(2f), look = KeyLook.Action) { act() }
             }

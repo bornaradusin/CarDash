@@ -145,7 +145,7 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         r.setObserver(object : OfflineRegion.OfflineRegionObserver {
             override fun onStatusChanged(status: OfflineRegionStatus) = show(r.id, status)
             override fun onError(error: OfflineRegionError) {
-                val why = problem(error.message, hasInternet())
+                val why = problem(error.message, hasInternet(), error.reason)
                 _areas.update { list -> list.map { if (it.id == r.id) it.copy(error = why) else it } }
             }
             override fun mapboxTileCountLimitExceeded(limit: Long) = Unit
@@ -160,6 +160,9 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         applyNetwork()
     }
 
+    /** Each area's fetched count at its last status, to tell that it moved on. */
+    private val lastCount = HashMap<Long, Long>()
+
     private fun show(id: Long, s: OfflineRegionStatus) {
         val pct = if (s.requiredResourceCount > 0) (100 * s.completedResourceCount / s.requiredResourceCount).toInt() else 0
         if (s.isComplete) {
@@ -169,6 +172,8 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         _areas.update { list ->
             list.map {
                 if (it.id != id) it else it.copy(
+                    // It moved on: a tile that failed before was fetched on a retry
+                    error = if (s.isComplete || s.completedResourceCount > (lastCount[id] ?: Long.MAX_VALUE)) null else it.error,
                     complete = s.isComplete,
                     percent = if (s.isComplete) 100 else pct.coerceIn(0, 99),
                     bytes = s.completedResourceSize,
@@ -177,6 +182,7 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
                 )
             }
         }
+        lastCount[id] = s.completedResourceCount
     }
 
     fun pause(id: Long) {
@@ -227,7 +233,7 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
          * What a download error means for the person. EPERM: Android refused CarDash a connection at all,
          * which is the radio's per-app network setting or a data saver, not the map's server.
          */
-        fun problem(message: String?, hasInternet: Boolean = true): String = when {
+        fun problem(message: String?, hasInternet: Boolean = true, reason: String? = null): String = when {
             !hasInternet ->
                 "Android didn't give CarDash its internet permission when it was updated. Uninstall CarDash and " +
                     "install it again (its settings start over)"
@@ -235,6 +241,9 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
             message.contains("EPERM") || message.contains("Operation not permitted") ->
                 "the radio doesn't let CarDash use the internet. Allow it in the radio's settings (Apps › CarDash: " +
                     "network, Wi-Fi or mobile data) and turn off any data saver for it"
+            // A tile that timed out or a dropped connection: MapLibre tries it again by itself
+            reason == OfflineRegionError.REASON_CONNECTION || message.contains("timeout", ignoreCase = true) ->
+                "slow connection, trying again"
             else -> message
         }
 
