@@ -179,14 +179,6 @@ class Settings(context: Context) {
         _googleKey.value = clean
     }
 
-    private val _bigMap = MutableStateFlow(sp.getBoolean("bigMap", true))
-    /** On a route, with the map showing, the map takes the RPM dial's place. */
-    val bigMap: StateFlow<Boolean> = _bigMap
-
-    fun setBigMap(v: Boolean) {
-        sp.edit().putBoolean("bigMap", v).apply()
-        _bigMap.value = v
-    }
 
     private val _wifiOnly = MutableStateFlow(sp.getBoolean("mapWifiOnly", true))
     /** Saved map areas download only on Wi-Fi. */

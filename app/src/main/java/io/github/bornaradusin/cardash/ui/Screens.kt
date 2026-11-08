@@ -174,7 +174,6 @@ data class DashState(
     val spoken: Boolean,
     /** The driver's own Google key for Eircodes; blank when there's none. */
     val googleKey: String,
-    val bigMap: Boolean,
     val wifiOnly: Boolean,
     val home: Place?,
     val work: Place?,
@@ -242,7 +241,6 @@ class DashActions(
     val allowLocation: () -> Unit,
     val setSpoken: (Boolean) -> Unit,
     val setGoogleKey: (String) -> Unit,
-    val setBigMap: (Boolean) -> Unit,
     // The look
     val setAccent: (Int) -> Unit,
     // Offline map
@@ -315,8 +313,8 @@ fun CarDash(state: DashState, actions: DashActions) {
     // A route starts: show the map
     val routing = state.nav.destination != null
     LaunchedEffect(routing) {
-        // Big map on a route (Settings): the big map, else the map in the box
-        if (routing && centre.currentPage == VIEW_CAR) centre.animateScrollToPage(if (state.bigMap) VIEW_BIG_MAP else VIEW_MAP)
+        // The map in the box; the big map is the view under the directions
+        if (routing && centre.currentPage == VIEW_CAR) centre.animateScrollToPage(VIEW_MAP)
     }
     val openSearch = { settings = false; whereTo = true }
 

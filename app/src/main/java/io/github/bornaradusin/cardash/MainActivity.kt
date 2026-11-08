@@ -177,7 +177,6 @@ class MainActivity : ComponentActivity() {
             allowLocation = { askLocation(force = true) },
             setSpoken = { app.settings.setSpoken(it) },
             setGoogleKey = { app.settings.setGoogleKey(it) },
-            setBigMap = { app.settings.setBigMap(it) },
             setAccent = { argb ->
                 app.settings.setAccent(argb)
                 C.setAccent(Color(app.settings.accent.value))
@@ -229,7 +228,6 @@ class MainActivity : ComponentActivity() {
             val accent by app.settings.accent.collectAsState()
             val spoken by app.settings.spoken.collectAsState()
             val googleKey by app.settings.googleKey.collectAsState()
-            val bigMap by app.settings.bigMap.collectAsState()
             val wifiOnly by app.settings.wifiOnly.collectAsState()
             val home by app.places.home.collectAsState()
             val work by app.places.work.collectAsState()
@@ -282,7 +280,6 @@ class MainActivity : ComponentActivity() {
                 accent = accent,
                 spoken = spoken,
                 googleKey = googleKey,
-                bigMap = bigMap,
                 wifiOnly = wifiOnly,
                 home = home,
                 work = work,
