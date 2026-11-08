@@ -42,7 +42,7 @@ To be sure it never costs anything, set the Geocoding API's daily limit to a few
 
 The middle box switches to the map, tilted and turning with the car, the route in the accent colour and an arrow at the next turn. On top: the next turn and how far. Underneath: when you'll arrive, the time left and the distance to go.
 
-![Home on a route, with the 3D map in the middle box](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/map.gif)
+![On a route: the 3D map in the middle box follows the car through a right turn, slowing and changing down for it, while the directions count down](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/map.gif)
 
 Swipe the middle box down to **Directions** for the next turn big, the one after it, and **End route**.
 
@@ -54,7 +54,7 @@ Swipe the middle box down to **Directions** for the next turn big, the one after
 
 With **Settings › Navigation › Big map on a route** on, the map takes the RPM dial's place while you're on a route and the map is showing. Under it, six small gauges instead of four: RPM and coolant join oil, boost, intake air and battery. Swipe the middle box to another view, or end the route, and Home goes back to normal.
 
-![The big map on a route](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/big-map.gif)
+![The big map on a route: the car takes the right turn and the map turns with it](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/big-map.gif)
 
 ## Speed limits and traffic lights
 
