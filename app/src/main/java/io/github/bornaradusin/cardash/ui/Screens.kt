@@ -1457,7 +1457,7 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                     )
                     Text(
                         if (state.gearsFound >= state.gearCount) "Learnt: all ${state.gearCount} gears."
-                        else "Learning: ${state.gearsFound} of ${state.gearCount} found. Drive a few seconds in each gear and it shows once it knows them all.",
+                        else "Learning: ${state.gearsFound} of ${state.gearCount} found. Drive a few seconds in each gear: it shows the gear once it knows them all, or all but 1st or top.",
                         color = C.muted, fontSize = 14.sp,
                     )
                     Wide("Learn the gears again") { actions.relearnGears() }

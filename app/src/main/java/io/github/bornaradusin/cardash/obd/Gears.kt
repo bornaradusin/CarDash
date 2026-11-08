@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
  * time rpm per km/h holds steady for a moment (in gear, clutch up), that figure gets a count. The
  * counts pile up around one figure per gear, and once there's a pile for every gear (the number of
  * gears is set in Settings) the highest figure is 1st and the lowest is top. Kept between drives.
+ * With one gear still missing, the others are numbered when it's clear which one it is: 1st turns over
+ * 95 rpm per km/h and no other gear does, so with that pile found the missing one is top, and without
+ * it, 1st. A gap too wide for neighbouring gears means the missing one is in between: none is shown.
  *
  * Between gears, with the clutch down or coasting, the figure matches no gear and the gear shows "–".
  */
@@ -29,6 +32,8 @@ class Gears(context: Context) {
 
     /** rpm per km/h of each gear, 1st first; empty until every gear has been found. */
     private var ratios: List<Float> = emptyList()
+    /** The gears that can be named now, as (gear, rpm per km/h): all of them, or all but one. */
+    private var named: List<Pair<Int, Float>> = emptyList()
 
     private val _gear = MutableStateFlow<Int?>(null)
     /** The gear the car is in now, or null (stopped, between gears, clutch down, or not learnt yet). */
@@ -100,18 +105,26 @@ class Gears(context: Context) {
     }
 
     private fun gearFor(ratio: Float): Int? {
-        val rs = ratios
-        if (rs.isEmpty()) return null
+        val gs = named
+        if (gs.isEmpty()) return null
         var best = -1
         var bestD = Float.MAX_VALUE
-        rs.forEachIndexed { i, r ->
+        gs.forEach { (gear, r) ->
             val d = abs(ln(ratio / r))
             if (d < bestD) {
                 bestD = d
-                best = i
+                best = gear
             }
         }
-        return if (bestD < 0.06f) best + 1 else null
+        return if (bestD < 0.06f) best else null
+    }
+
+    /** The found piles numbered, highest first, when every gear but one is found and it's clear which. */
+    private fun nameAllButOne(found: List<Float>, want: Int): List<Pair<Int, Float>> {
+        if (found.size != want - 1 || found.isEmpty()) return emptyList()
+        if (found.zipWithNext().any { (a, b) -> a / b > MAX_STEP }) return emptyList()   // one missing in between
+        val first = if (found.first() >= FIRST_GEAR) 1 else 2
+        return found.mapIndexed { i, r -> (first + i) to r }
     }
 
     /** Finds the piles: the strongest peaks, far enough apart to be different gears. */
@@ -121,12 +134,15 @@ class Gears(context: Context) {
         val want = _count.value
         if (total < 40) {
             ratios = emptyList()
+            named = emptyList()
             _ratios.value = ratios
             _found.value = 0
             return
         }
         val smooth = IntArray(BINS) { i -> (if (i > 0) bins[i - 1] else 0) + 2 * bins[i] + (if (i < BINS - 1) bins[i + 1] else 0) }
-        val floor = maxOf(40, (total * 4 * 0.004f).toInt())
+        // A pile needs a share of all the counts, but no more than a few pull-aways' worth: 1st is held
+        // for seconds while 5th and 6th pile up for hours, and it was never found
+        val floor = (total * 4 * 0.004f).toInt().coerceIn(MIN_FLOOR, MAX_FLOOR)
         val peaks = (0 until BINS).filter { i ->
             smooth[i] >= floor &&
                 (i == 0 || smooth[i] >= smooth[i - 1]) &&
@@ -138,7 +154,9 @@ class Gears(context: Context) {
             if (taken.size == want) break
         }
         _found.value = taken.size
-        ratios = if (taken.size == want) taken.map { ratioOf(it) }.sortedDescending() else emptyList()
+        val found = taken.map { ratioOf(it) }.sortedDescending()
+        ratios = if (taken.size == want) found else emptyList()
+        named = if (taken.size == want) found.mapIndexed { i, r -> (i + 1) to r } else nameAllButOne(found, want)
         _ratios.value = ratios
     }
 
@@ -165,5 +183,12 @@ class Gears(context: Context) {
         private val LN_MAX = ln(MAX_RATIO)
         /** Gears are at least ~11 % apart: neighbouring peaks closer than that are one gear. */
         private const val MIN_GAP_BINS = 4
+        /** The smallest pile that counts as a gear (in smoothed counts, 4 per sample), and the most it needs. */
+        private const val MIN_FLOOR = 40
+        private const val MAX_FLOOR = 120
+        /** 1st turns over this many rpm per km/h (about 100-160 in cars), and 2nd stays under it. */
+        private const val FIRST_GEAR = 95f
+        /** Neighbouring gears are less than this far apart (1st to 2nd is the widest, about 1.6-1.9). */
+        private const val MAX_STEP = 2.05f
     }
 }
