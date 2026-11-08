@@ -60,8 +60,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import io.github.bornaradusin.cardash.car.NavInfo
 import io.github.bornaradusin.cardash.nav.Geo
@@ -750,7 +748,7 @@ private fun GoogleKeyDialog(current: String, onSave: (String) -> Unit, onDismiss
             if (problem == null) onSave(key)
         }
     }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    KeyboardDialog(onDismissRequest = onDismiss) {
         Column(Modifier.width(900.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)) {
             Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Google key for Eircodes", color = C.ink, fontSize = 24.sp)
@@ -784,7 +782,6 @@ private fun GoogleKeyDialog(current: String, onSave: (String) -> Unit, onDismiss
                     }
                 }
             }
-            CarKeyboardHere(Modifier.fillMaxWidth())
         }
     }
 }

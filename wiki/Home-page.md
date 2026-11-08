@@ -62,7 +62,7 @@ Over the revs set in **Settings › Shift up** (2,500 rpm unless you change it),
 
 ## Typing
 
-Every box in CarDash (Where to?, the name, the Google key, the service items) uses CarDash's own keyboard, in the app's colours, instead of Android's. Numbers-only boxes get a number pad. **Paste** puts in something you've copied, **?#&** has the symbols, and the red key does what the box is for (**Search**, **Done**).
+Every box in CarDash (Where to?, the name, the Google key, the service items) uses CarDash's own keyboard, in the app's colours, instead of Android's. It runs right across the bottom of the screen, edge to edge, so the keys are as big as they can be. Numbers-only boxes get one row of big number keys. **Paste** puts in something you've copied, **?#&** has the symbols, and the red key does what the box is for (**Search**, **Done**).
 
 ![Typing in Where to? on CarDash's keyboard](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/where-to.gif)
 

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -48,6 +47,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -129,6 +130,26 @@ fun CarKeyboardHere(modifier: Modifier = Modifier) {
     if (keys.connection != null) CarKeyboard(modifier)
 }
 
+/**
+ * A dialog that's typed in: its card in the middle of the screen, and CarDash's keyboard right across
+ * the bottom, edge to edge, while one of its boxes has the focus. Tapping beside the card closes it.
+ */
+@Composable
+fun KeyboardDialog(onDismissRequest: () -> Unit, card: @Composable () -> Unit) {
+    Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize()) {
+            Box(
+                Modifier.weight(1f).fillMaxWidth().pointerInput(Unit) { detectTapGestures { onDismissRequest() } },
+                contentAlignment = Alignment.Center,
+            ) {
+                // Taps on the card stay on the card
+                Box(Modifier.pointerInput(Unit) { detectTapGestures { } }) { card() }
+            }
+            CarKeyboardHere(Modifier.fillMaxWidth())
+        }
+    }
+}
+
 private enum class KeyLook { Plain, Special, Lit, Action }
 
 private const val LETTERS_2 = "qwertyuiop"
@@ -182,23 +203,20 @@ fun CarKeyboard(modifier: Modifier = Modifier) {
         }
     }
 
+    // Right across the screen, edge to edge, so the keys are as wide as they can be
     Box(
-        modifier.background(Color(0xFF0B0D12)).padding(horizontal = 10.dp, vertical = 10.dp),
+        modifier.background(Color(0xFF0B0D12)).padding(horizontal = 6.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (numbers) {
-            Column(Modifier.widthIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("123", "456", "789").forEach { row ->
-                    KeyRow { row.forEach { c -> Key(c.toString(), Modifier.weight(1f)) { type(c.toString()) } } }
-                }
-                KeyRow {
-                    Key(null, Modifier.weight(1f), icon = Ic.backspace, look = KeyLook.Special, repeat = true) { backspace() }
-                    Key("0", Modifier.weight(1f)) { type("0") }
-                    Key(actionLabel, Modifier.weight(1f), look = KeyLook.Action) { act() }
-                }
+            // One row across: big keys, and it leaves the box being typed in plenty of room above
+            KeyRow {
+                "1234567890".forEach { c -> Key(c.toString(), Modifier.weight(1f)) { type(c.toString()) } }
+                Key(null, Modifier.weight(1.5f), icon = Ic.backspace, look = KeyLook.Special, repeat = true) { backspace() }
+                Key(actionLabel, Modifier.weight(2f), look = KeyLook.Action) { act() }
             }
         } else {
-            Column(Modifier.widthIn(max = 940.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 KeyRow { "1234567890".forEach { c -> Key(c.toString(), Modifier.weight(1f)) { type(c.toString()) } } }
                 KeyRow {
                     (if (symbols) SYMBOLS_2 else LETTERS_2).forEach { c ->

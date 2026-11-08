@@ -99,8 +99,6 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import io.github.bornaradusin.cardash.R
 import io.github.bornaradusin.cardash.Settings
@@ -342,7 +340,7 @@ fun CarDash(state: DashState, actions: DashActions) {
                         PAGE_HOME -> Home(state, actions, centre, openSearch) { scope.launch { pager.animateScrollToPage(PAGE_APPS) } }
                         PAGE_SERVICE -> ServicePage(state.service, actions)
                         else -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
-                            Gauges(state.obd, state.canValues, actions)
+                            Gauges(state.obd, state.canValues, state.gear, actions)
                         }
                     }
                 }
@@ -616,7 +614,7 @@ private fun NameDialog(name: String, onSave: (String) -> Unit, onDismiss: () -> 
     var text by remember { mutableStateOf(name) }
     val box = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { box.requestFocus() } }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    KeyboardDialog(onDismissRequest = onDismiss) {
         Column(Modifier.width(900.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)) {
             Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Name", color = C.ink, fontSize = 24.sp)
@@ -636,7 +634,6 @@ private fun NameDialog(name: String, onSave: (String) -> Unit, onDismiss: () -> 
                     TextButton(onClick = { onSave(text) }) { Text("Save", color = C.red, fontWeight = FontWeight.Bold) }
                 }
             }
-            CarKeyboardHere(Modifier.fillMaxWidth())
         }
     }
 }
@@ -1201,12 +1198,12 @@ private fun RoundButton(icon: ImageVector, label: String, enabled: Boolean, onCl
 // ---------- gauges ----------
 
 @Composable
-private fun Gauges(obd: ObdState, can: Map<CanRole, Float>, actions: DashActions) {
+private fun Gauges(obd: ObdState, can: Map<CanRole, Float>, gear: Int?, actions: DashActions) {
     val r = obd.readings
     val t = obd.trip
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            RpmDial(r, 300.dp)
+            RpmDial(r, gear, 300.dp)
             SpeedDial(r, t.meters, 300.dp)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {

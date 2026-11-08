@@ -319,8 +319,8 @@ private fun ServiceEditDialog(
     val preview = statusOf(form(), s.carKm, today, s.kmBefore, s.daysBefore)
     val canSave = name.isNotBlank()
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        // The form, and CarDash's keyboard under it while a box is being typed in
+    // The form, and CarDash's keyboard across the bottom of the screen while a box is being typed in
+    KeyboardDialog(onDismissRequest = onDismiss) {
         Column(Modifier.width(660.dp).heightIn(max = 700.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)) {
         Column(
             Modifier
@@ -421,7 +421,6 @@ private fun ServiceEditDialog(
                 }
             }
         }
-        CarKeyboardHere(Modifier.fillMaxWidth())
         }
     }
     if (picking) {
