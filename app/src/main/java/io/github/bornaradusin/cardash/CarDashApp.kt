@@ -51,8 +51,12 @@ class CarDashApp : Application() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Updates from GitHub: about once a day, installed from inside the app. */
+    val updater: io.github.bornaradusin.cardash.update.Updater by lazy { io.github.bornaradusin.cardash.update.Updater(this, scope) }
+
     override fun onCreate() {
         super.onCreate()
+        updater.start()
         // The map library, once for the whole app
         MapLibre.getInstance(this)
         // Its downloads, gentler than its own: 8 tiles at a time and long timeouts. A saved area

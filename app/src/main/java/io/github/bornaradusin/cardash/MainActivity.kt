@@ -303,7 +303,11 @@ class MainActivity : ComponentActivity() {
                 recent = recent,
                 mapAreas = mapAreas,
             )
-            Scaled { CarKeyboardHost { CarDash(state, actions) } }
+            Scaled {
+                CarKeyboardHost { CarDash(state, actions) }
+                // An update found by itself waits until the car stands still
+                io.github.bornaradusin.cardash.ui.UpdatePrompt(app.updater, moving = (obd.readings.speedKmh ?: (nav.speed * 3.6f)) > 3f)
+            }
         }
     }
 

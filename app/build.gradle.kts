@@ -18,8 +18,8 @@ android {
         applicationId = "io.github.bornaradusin.cardash"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "1.1.6"
+        versionCode = 18
+        versionName = "1.1.7"
     }
 
     signingConfigs {

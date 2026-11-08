@@ -51,3 +51,11 @@ The suggested points are for the TT's 2.0 TDI: change up at 2,700 rpm in 1st, 2,
 | Permissions | **Notification access**, for Google Maps' next turn and the music controls. **Location**, for the map and directions. **Home screen**, so CarDash opens when the radio starts and with the Home button |
 
 If any of these is missing when the radio starts (an update or the radio can take them away), CarDash shows a popup listing them, each with its **Allow** button. It closes by itself once they're all allowed; **Not now** hides it until the radio starts again.
+
+## Updates
+
+| Card | What's there |
+|---|---|
+| Updates | **Check for updates**: CarDash looks on GitHub about once a day for a newer release. **Check now**, or **Update to …** once one is found |
+
+When a newer CarDash is out, a card shows what's new, with **Update** and **Not now**. It only comes up while the car is standing still, never while driving. **Update** downloads the APK, checks it against the release's `SHA256SUMS.txt` and opens Android's installer; the first time, Android asks you to allow CarDash to install apps (turn on **Allow from this source** and come back). The downloaded APK is deleted as soon as the update is in. **Not now** stops that version popping up by itself; it stays under **Settings › Updates**.

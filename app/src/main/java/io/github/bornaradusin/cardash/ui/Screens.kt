@@ -1542,6 +1542,7 @@ private enum class SettingsSection(val title: String, val sub: String) {
     LOOK("Look", "Colour, name, screen"),
     MUSIC("Music", "The music app"),
     PERMISSIONS("Permissions", "What CarDash may use"),
+    UPDATES("Updates", "New versions from GitHub"),
 }
 
 private val SettingsSection.icon: ImageVector
@@ -1552,6 +1553,7 @@ private val SettingsSection.icon: ImageVector
         SettingsSection.LOOK -> Ic.star
         SettingsSection.MUSIC -> Ic.music
         SettingsSection.PERMISSIONS -> Ic.check
+        SettingsSection.UPDATES -> Ic.download
     }
 
 @Composable
@@ -1593,6 +1595,7 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                         SettingsSection.LOOK -> TwoColumns({ AccentCard(state, actions) }, { NameCard(state, actions); ScreenCard(state, actions) })
                         SettingsSection.MUSIC -> TwoColumns({ MusicCard(state, actions) }, { })
                         SettingsSection.PERMISSIONS -> TwoColumns({ PermissionsCard(state, actions) }, { })
+                        SettingsSection.UPDATES -> TwoColumns({ UpdatesCard((context.applicationContext as io.github.bornaradusin.cardash.CarDashApp).updater) }, { })
                     }
                 }
             }

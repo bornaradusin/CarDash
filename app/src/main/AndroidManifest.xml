@@ -20,6 +20,8 @@
 
     <!-- Uninstall from the app list (Android still asks first) -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Updates from GitHub, installed from inside the app (Android asks once) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- The radio's CAN service (oil temperature, odometer), Google Maps for directions it can't find,
          and the radio's voice for spoken directions -->
@@ -78,6 +80,24 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_devices" />
         </activity>
+
+        <!-- A downloaded update, handed to Android's installer -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_files" />
+        </provider>
+
+        <!-- Deletes the downloaded update once it's installed -->
+        <receiver android:name=".update.UpdateCleaner" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Reads Google Maps' next turn from its notification, and finds what's playing -->
         <service
