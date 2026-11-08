@@ -1,6 +1,8 @@
 package io.github.bornaradusin.cardash.nav
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -78,6 +80,11 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
 
     private fun mayDownload() = !wifiOnly() || onWifi
 
+    /** Whether Android gave CarDash its internet permission: an update over 1.0.1-1.0.8, which had none,
+     * may not get it back on some radios. */
+    private fun hasInternet() =
+        context.checkSelfPermission(Manifest.permission.INTERNET) == PackageManager.PERMISSION_GRANTED
+
     /** Wi-Fi came or went, or the setting changed: start or hold the downloads. */
     fun applyNetwork() {
         regions.values.forEach { r ->
@@ -138,7 +145,7 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         r.setObserver(object : OfflineRegion.OfflineRegionObserver {
             override fun onStatusChanged(status: OfflineRegionStatus) = show(r.id, status)
             override fun onError(error: OfflineRegionError) {
-                val why = problem(error.message)
+                val why = problem(error.message, hasInternet())
                 _areas.update { list -> list.map { if (it.id == r.id) it.copy(error = why) else it } }
             }
             override fun mapboxTileCountLimitExceeded(limit: Long) = Unit
@@ -220,7 +227,10 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
          * What a download error means for the person. EPERM: Android refused CarDash a connection at all,
          * which is the radio's per-app network setting or a data saver, not the map's server.
          */
-        fun problem(message: String?): String = when {
+        fun problem(message: String?, hasInternet: Boolean = true): String = when {
+            !hasInternet ->
+                "Android didn't give CarDash its internet permission when it was updated. Uninstall CarDash and " +
+                    "install it again (its settings start over)"
             message == null -> "the download failed"
             message.contains("EPERM") || message.contains("Operation not permitted") ->
                 "the radio doesn't let CarDash use the internet. Allow it in the radio's settings (Apps › CarDash: " +
