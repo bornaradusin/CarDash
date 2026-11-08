@@ -406,7 +406,10 @@ internal fun MapDash(state: DashState, actions: DashActions, openSearch: () -> U
                 }
                 RoundIconButton(if (nav.muted) Ic.muted else Ic.volume, if (nav.muted) "Sound on" else "Mute", actions.toggleMute)
                 RoundIconButton(Ic.close, "End the route", actions.endRoute)
-            } else if (nav.permission && nav.destination == null) {
+            } else if (!nav.permission) {
+                // No location (it can be lost with an update on some radios): the map can't follow the car
+                Box(Modifier.width(280.dp)) { Wide("Allow location", actions.allowLocation) }
+            } else if (nav.destination == null) {
                 WhereToButton(openSearch)
             }
         }
@@ -499,9 +502,9 @@ private fun Figure(value: String, name: String) {
 /** Search, the place found, and Go; Home, Work and recent places beside it. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun WhereToScreen(state: DashState, actions: DashActions, close: () -> Unit) {
+internal fun WhereToScreen(state: DashState, actions: DashActions, initial: String = "", close: () -> Unit) {
     val context = LocalContext.current
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(initial) }
     var results by remember { mutableStateOf<List<Place>?>(null) }
     var searching by remember { mutableStateOf(false) }
     var offline by remember { mutableStateOf(false) }

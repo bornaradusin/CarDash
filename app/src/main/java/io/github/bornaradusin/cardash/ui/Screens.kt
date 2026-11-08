@@ -67,6 +67,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.key
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -155,6 +158,8 @@ data class DashState(
     val fullScreen: Boolean,
     /** Goes up each time the radio's Home button is pressed: back to the Home page. */
     val homePresses: Int,
+    /** A shared place that couldn't be found on its own: Where to? opens with these words. */
+    val searchFor: String? = null,
     /** The engine runs on diesel: fuel use is worked out from load and RPM, not air flow. */
     val diesel: Boolean,
     val can: CanState,
@@ -255,6 +260,8 @@ class DashActions(
     val askLocation: () -> Unit,
     /** The Allow buttons: asks again, or opens Android's settings for CarDash after a no for good. */
     val allowLocation: () -> Unit,
+    /** Where to? has opened with [DashState.searchFor]. */
+    val searchTaken: () -> Unit,
     val setSpoken: (Boolean) -> Unit,
     val setGoogleKey: (String) -> Unit,
     // The look
@@ -310,14 +317,32 @@ internal const val VIEW_CAR = 0
 internal const val VIEW_MAP = 1
 internal const val VIEW_DIRECTIONS = 2
 internal const val VIEW_BIG_MAP = 3
-private const val VIEWS = 4
+
+/** The middle box's views in swipe order: the directions only while there's a route to give them. */
+internal fun centreViews(routed: Boolean): List<Int> =
+    if (routed) listOf(VIEW_CAR, VIEW_MAP, VIEW_DIRECTIONS, VIEW_BIG_MAP) else listOf(VIEW_CAR, VIEW_MAP, VIEW_BIG_MAP)
+
+/** A route to follow: CarDash's own (or one being planned), or Google Maps navigating. */
+internal fun DashState.routed(): Boolean = nav.route != null || nav.destination != null || google != null
 
 /** Four pages to swipe between (all apps, Home, gauges, service), and Settings from the gear. */
 @Composable
 fun CarDash(state: DashState, actions: DashActions) {
     val pager = rememberPagerState(initialPage = PAGE_HOME) { PAGES }
     /** The middle box's view, kept here so it survives the big map taking over and Where to? starting a route. */
-    val centre = rememberPagerState(initialPage = VIEW_CAR) { VIEWS }
+    val views = centreViews(state.routed())
+    val viewsNow by rememberUpdatedState(views)
+    val centre = rememberPagerState(initialPage = 0) { viewsNow.size }
+    // The view showing, so it stays on screen when the directions come or go with a route
+    var shownView by remember { mutableIntStateOf(VIEW_CAR) }
+    LaunchedEffect(centre) {
+        snapshotFlow { centre.settledPage }.collect { shownView = viewsNow.getOrElse(it) { viewsNow.last() } }
+    }
+    LaunchedEffect(views) {
+        // The directions gone with the route: the map in the box instead
+        val i = views.indexOf(shownView).takeIf { it >= 0 } ?: views.indexOf(VIEW_MAP)
+        if (centre.currentPage != i) centre.scrollToPage(i)
+    }
     val scope = rememberCoroutineScope()
     var settings by remember { mutableStateOf(false) }
     var whereTo by remember { mutableStateOf(false) }
@@ -336,7 +361,16 @@ fun CarDash(state: DashState, actions: DashActions) {
         // The map in the box; the big map is the view under the directions
         if (routing && centre.currentPage == VIEW_CAR) centre.animateScrollToPage(VIEW_MAP)
     }
-    val openSearch = { settings = false; whereTo = true }
+    var searchText by remember { mutableStateOf("") }
+    val openSearch = { settings = false; searchText = ""; whereTo = true }
+    // A shared place to pick from: Where to? with its name and address typed in
+    LaunchedEffect(state.searchFor) {
+        val q = state.searchFor ?: return@LaunchedEffect
+        settings = false
+        searchText = q
+        whereTo = true
+        actions.searchTaken()
+    }
 
     Column(
         Modifier
@@ -354,7 +388,7 @@ fun CarDash(state: DashState, actions: DashActions) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 settings -> SettingsScreen(state, actions) { settings = false }
-                whereTo -> WhereToScreen(state, actions) {
+                whereTo -> WhereToScreen(state, actions, searchText) {
                     whereTo = false
                     scope.launch { if (pager.currentPage != PAGE_HOME) pager.scrollToPage(PAGE_HOME) }
                 }
@@ -374,9 +408,13 @@ fun CarDash(state: DashState, actions: DashActions) {
         }
     }
     if (naming) NameDialog(state.name, onSave = { actions.setName(it); naming = false }, onDismiss = { naming = false })
-    // Not the home app: says so, with the fix; Not now waits for the next time CarDash is opened
-    var homeLater by remember { mutableStateOf(false) }
-    if (!state.isHomeApp && !homeLater && !settings) HomeAppNotice(onFix = actions.chooseHome, onLater = { homeLater = true })
+    // Something CarDash needs isn't allowed (an update or the radio can take it away): a popup with
+    // the fixes, each time the radio starts. Not now hides it until the next start; it closes itself
+    // once everything's allowed. A moment's wait first, so location has been checked.
+    var fixLater by rememberSaveable { mutableStateOf(false) }
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(2_500); settled = true }
+    if (settled && !fixLater && !settings && missingPermissions(state)) FixNotice(state, actions, onLater = { fixLater = true })
     // Something due: a reminder, except on the Service page itself and in Settings
     if (!settings && !whereTo && pager.currentPage != PAGE_SERVICE) {
         ServiceReminder(state.service, actions) { scope.launch { pager.animateScrollToPage(PAGE_SERVICE) } }
@@ -389,21 +427,25 @@ fun CarDash(state: DashState, actions: DashActions) {
 }
 
 /** CarDash isn't the radio's home app: the Home button and starting the radio open another one. */
+internal fun missingPermissions(state: DashState) = !state.nav.permission || !state.hasNotifications || !state.isHomeApp
+
+/** What CarDash needs and hasn't got, each with its fix; the ones already sorted say Allowed. */
 @Composable
-private fun HomeAppNotice(onFix: () -> Unit, onLater: () -> Unit) {
+private fun FixNotice(state: DashState, actions: DashActions, onLater: () -> Unit) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onLater, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier.width(620.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)
+            Modifier.width(680.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)
                 .padding(start = 28.dp, end = 28.dp, top = 26.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("CarDash isn't the home screen", color = C.ink, fontSize = 26.sp)
+            Text("CarDash is missing some permissions", color = C.ink, fontSize = 26.sp)
             Text(
-                "The radio's Home button and starting the radio open another app. Make CarDash the home app, " +
-                    "so it's there every time the radio starts.",
+                "An update or the radio can take these away. Tap Allow on each one; this goes once they're all allowed.",
                 color = C.muted, fontSize = 16.sp, lineHeight = 22.sp,
             )
-            Wide("Make CarDash the home screen") { onFix() }
+            Permission("Location", "Your position on the map, for directions", state.nav.permission, actions.allowLocation)
+            Permission("Notification access", "Google Maps' next turn, and music controls", state.hasNotifications, actions.allowNotifications)
+            Permission("Home screen", "CarDash when the radio starts and with the Home button", state.isHomeApp, actions.chooseHome, button = "Set")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 androidx.compose.material3.TextButton(onClick = onLater) { Text("Not now", color = C.ink2, fontSize = 15.sp) }
             }
@@ -705,7 +747,8 @@ private fun Home(
     val r = state.obd.readings
     val doors = remember(state.can) { Doors.from(state.can.values) }
     // The big map takes the RPM dial's place (its own view, route or not); an open door shows over it
-    val big = centre.currentPage == VIEW_BIG_MAP && !doors.anyOpen
+    val views = centreViews(state.routed())
+    val big = views.getOrElse(centre.currentPage) { views.last() } == VIEW_BIG_MAP && !doors.anyOpen
     Column(Modifier.fillMaxSize()) {
         // Up or down on the left of the screen: the main dash or the map dash (the middle box keeps its own swipe)
         val swipe = Modifier.leftSwipe(LEFT_SWIPE) { setMapDash(!mapDash) }
@@ -795,9 +838,9 @@ private fun Modifier.leftSwipe(zone: Dp, onSwipe: () -> Unit): Modifier = pointe
 
 @Composable
 private fun SmallGauges(r: Readings) {
-    // Oil once the radio's CAN box is read; until then, engine load
-    if (r.oilC != null) RoundGauge(Ic.engine, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 130f, diameter = GAUGE)
-    else RoundGauge(Ic.gauge, "Engine load", r.loadPct, 0f, 100f, r.loadPct?.let { "${it.toInt()}" }, "%", diameter = GAUGE)
+    // Oil once the radio's CAN box is read; until then, engine load. The engine icon either way
+    if (r.oilC != null) RoundGauge(Ic.engine, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 120f, diameter = GAUGE)
+    else RoundGauge(Ic.engine, "Engine load", r.loadPct, 0f, 100f, r.loadPct?.let { "${it.toInt()}" }, "%", diameter = GAUGE)
     RoundGauge(Ic.boost, "Boost", r.boostBar, 0f, 1.5f, r.boostBar?.let { fmt(it, 1) }, "bar", diameter = GAUGE)
     RoundGauge(Ic.intake, "Intake air", r.intakeC, 0f, 70f, r.intakeC?.let { "${it.toInt()}" }, "°C", warnAbove = 55f, diameter = GAUGE)
     RoundGauge(Ic.battery, "Battery", r.volts, 11f, 15f, r.volts?.let { fmt(it, 1) }, "V", warnBelow = 11.8f, diameter = GAUGE)
@@ -928,8 +971,9 @@ private fun CenterPanel(
         if (doors.anyOpen) {
             Box(Modifier.fillMaxSize().padding(12.dp)) { DoorsPanel(doors) }
         } else {
-            VerticalPager(centre, Modifier.fillMaxSize()) { view ->
-                when (view) {
+            val views = centreViews(state.routed())
+            VerticalPager(centre, Modifier.fillMaxSize()) { page ->
+                when (views.getOrElse(page) { VIEW_BIG_MAP }) {
                     VIEW_CAR -> Box(Modifier.fillMaxSize().padding(12.dp)) { DrivePanel(state.obd, state.canValues[CanRole.RANGE]) }
                     VIEW_MAP -> Box(Modifier.fillMaxSize().padding(6.dp)) { MapPanel(state, actions, openSearch, false) }
                     VIEW_DIRECTIONS -> Box(Modifier.fillMaxSize().padding(12.dp)) { DirectionsPanel(state, actions, openSearch) }
@@ -941,7 +985,7 @@ private fun CenterPanel(
                 Modifier.align(Alignment.CenterEnd).padding(end = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                repeat(VIEWS) { i ->
+                repeat(views.size) { i ->
                     Box(
                         Modifier.width(5.dp).height(if (i == centre.currentPage) 16.dp else 5.dp)
                             .clip(RoundedCornerShape(3.dp))
@@ -1697,6 +1741,8 @@ private fun PermissionsCard(state: DashState, actions: DashActions) {
     Card("Permissions") {
         Permission("Notification access", "Google Maps' next turn, and music controls", state.hasNotifications, actions.allowNotifications)
         Permission("Location", "Your position on the map, for directions", state.nav.permission, actions.allowLocation)
+        Permission("Home screen", "CarDash when the radio starts and with the Home button", state.isHomeApp, actions.chooseHome, button = "Set")
+        Text("If any of these is missing when the radio starts, CarDash shows them in a popup to fix.", color = C.muted, fontSize = 14.sp)
     }
 }
 
@@ -1992,7 +2038,7 @@ internal fun Card(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-internal fun Permission(name: String, why: String, granted: Boolean, ask: () -> Unit) {
+internal fun Permission(name: String, why: String, granted: Boolean, ask: () -> Unit, button: String = "Allow") {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(name, color = C.ink, fontSize = 17.sp)
@@ -2003,7 +2049,7 @@ internal fun Permission(name: String, why: String, granted: Boolean, ask: () -> 
             Modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).background(C.redTint).border(1.dp, C.red, RoundedCornerShape(24.dp))
                 .clickable(onClick = ask).padding(horizontal = 20.dp),
             contentAlignment = Alignment.Center,
-        ) { Text("Allow", color = C.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+        ) { Text(button, color = C.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
     }
 }
 

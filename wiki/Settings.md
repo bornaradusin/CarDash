@@ -48,4 +48,6 @@ The suggested points are for the TT's 2.0 TDI: change up at 2,700 rpm in 1st, 2,
 
 | Card | What's there |
 |---|---|
-| Permissions | **Notification access**, for Google Maps' next turn and the music controls. **Location**, for the map and directions |
+| Permissions | **Notification access**, for Google Maps' next turn and the music controls. **Location**, for the map and directions. **Home screen**, so CarDash opens when the radio starts and with the Home button |
+
+If any of these is missing when the radio starts (an update or the radio can take them away), CarDash shows a popup listing them, each with its **Allow** button. It closes by itself once they're all allowed; **Not now** hides it until the radio starts again.

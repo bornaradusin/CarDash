@@ -48,6 +48,8 @@ class MainActivity : ComponentActivity() {
     /** Bumped on resume, so permissions and installed apps are checked again after a trip to Settings. */
     private var resumes by mutableIntStateOf(0)
     private var homePresses by mutableIntStateOf(0)
+    /** A shared place that couldn't be found on its own: its name and address, for Where to? */
+    private var searchFor by mutableStateOf<String?>(null)
     /** Asked once per start, so the map doesn't keep asking after a no. */
     private var askedLocation = false
     private val locationRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { app.nav.start() }
@@ -178,6 +180,7 @@ class MainActivity : ComponentActivity() {
             forgetRecent = { app.places.forget(it) },
             askLocation = { askLocation(force = false) },
             allowLocation = { askLocation(force = true) },
+            searchTaken = { searchFor = null },
             setSpoken = { app.settings.setSpoken(it) },
             setGoogleKey = { app.settings.setGoogleKey(it) },
             setAccent = { argb ->
@@ -269,6 +272,7 @@ class MainActivity : ComponentActivity() {
                 isHomeApp = remember(resumes) { isHomeApp() },
                 fullScreen = fullScreen,
                 homePresses = homePresses,
+                searchFor = searchFor,
                 diesel = diesel,
                 can = can,
                 canPicks = usedPicks,
@@ -367,9 +371,17 @@ class MainActivity : ComponentActivity() {
         intent.action = null
         Toast.makeText(this, "Finding the place…", Toast.LENGTH_SHORT).show()
         shareScope.launch {
-            val place = runCatching { SharedPlace.from(text, app.settings.googleKey.value) }.getOrNull()
+            val found = runCatching { SharedPlace.from(text, app.settings.googleKey.value, app.nav.state.value.here) }.getOrNull()
+            val place = found?.place
             if (place == null) {
-                Toast.makeText(this@MainActivity, "Couldn't find a place in what was shared", Toast.LENGTH_LONG).show()
+                // Not found on its own: the name and address go in Where to? to pick from
+                val words = found?.words
+                if (words != null) {
+                    searchFor = words
+                    Toast.makeText(this@MainActivity, "Pick the place from the search", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "There was no place in what was shared", Toast.LENGTH_LONG).show()
+                }
                 return@launch
             }
             val route = app.nav.preview(place.pos)

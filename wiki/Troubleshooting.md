@@ -24,6 +24,9 @@ Match it in **Settings › Fuel use**: see [Fuel use](Fuel-use).
 
 ## Navigation and music
 
+**A popup says CarDash is missing some permissions**
+An update or the radio took one away. Tap **Allow** (or **Set** for the home screen) on each one it lists; the popup closes once they're all allowed. **Not now** hides it until the radio starts again.
+
 **The map says *Finding the GPS…***
 The radio hasn't got a position yet. Under a roof or just after starting it can take a minute.
 
@@ -36,8 +39,8 @@ It needs the internet, unless that area is saved in **Settings › Offline map**
 **The search doesn't find a place, or it's an Eircode**
 Tap **Find it in Google Maps** under the search, then in Google Maps tap **Share › CarDash**: CarDash drives there. Or add your own Google key in **Settings › Navigation** and Eircodes are found right in CarDash (see [Navigation](Navigation#getting-a-google-key)).
 
-**Shared a place to CarDash and it says it couldn't find it**
-CarDash needs the internet to read Google's link. Try sharing again; if it still fails, share the place itself (not a list or a photo).
+**Shared a place to CarDash and it opened the search instead of the route**
+CarDash couldn't read where Google puts the pin (it needs the internet for that), so it typed the place's name and address into Where to? for you: tap the right result. If it says there was no place in what was shared, share the place itself (not a list or a photo).
 
 **The Google key doesn't work**
 CarDash shows Google's reason when you save it. The usual ones: billing isn't set up on the project, or the Geocoding API isn't turned on (Google Cloud › API Library › Geocoding API › Enable).
