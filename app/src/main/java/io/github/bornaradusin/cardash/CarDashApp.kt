@@ -1,6 +1,10 @@
 package io.github.bornaradusin.cardash
 
 import android.app.Application
+import java.util.concurrent.TimeUnit
+import okhttp3.Dispatcher
+import okhttp3.OkHttpClient
+import org.maplibre.android.module.http.HttpRequestUtil
 import io.github.bornaradusin.cardash.car.CanRole
 import io.github.bornaradusin.cardash.car.ServiceBook
 import io.github.bornaradusin.cardash.car.canValues
@@ -51,6 +55,16 @@ class CarDashApp : Application() {
         super.onCreate()
         // The map library, once for the whole app
         MapLibre.getInstance(this)
+        // Its downloads, gentler than its own: a few tiles at a time and long timeouts. A saved area
+        // fetched 20 tiles at once over a phone's hotspot, and many timed out.
+        HttpRequestUtil.setOkHttpClient(
+            OkHttpClient.Builder()
+                .dispatcher(Dispatcher().apply { maxRequests = 8; maxRequestsPerHost = 4 })
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .build(),
+        )
         obd.fuelFactor = settings.fuelFactor.value
         obd.diesel = settings.diesel.value
         obd.dieselQ0 = settings.dieselQ0
