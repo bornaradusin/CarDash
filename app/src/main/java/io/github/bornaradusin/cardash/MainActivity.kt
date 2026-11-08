@@ -185,6 +185,8 @@ class MainActivity : ComponentActivity() {
             resumeMap = { app.offlineMaps.resume(it) },
             updateMap = { app.offlineMaps.update(it) },
             removeMap = { app.offlineMaps.remove(it) },
+            exportMaps = { uri, done -> app.offlineMaps.exportTo({ contentResolver.openOutputStream(uri) }, done) },
+            importMaps = { uri, done -> app.offlineMaps.importFrom({ contentResolver.openInputStream(uri) }, done) },
             setWifiOnly = {
                 app.settings.setWifiOnly(it)
                 app.offlineMaps.applyNetwork()

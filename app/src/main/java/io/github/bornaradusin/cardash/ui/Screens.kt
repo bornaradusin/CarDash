@@ -251,6 +251,9 @@ class DashActions(
     val resumeMap: (Long) -> Unit,
     val updateMap: (Long) -> Unit,
     val removeMap: (Long) -> Unit,
+    /** Saved areas to a file the person picked, and from one: what happened goes to the callback. */
+    val exportMaps: (android.net.Uri, (String) -> Unit) -> Unit,
+    val importMaps: (android.net.Uri, (String) -> Unit) -> Unit,
     val setWifiOnly: (Boolean) -> Unit,
 )
 

@@ -3,6 +3,12 @@ package io.github.bornaradusin.cardash.nav
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import org.maplibre.android.storage.FileSource
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -230,6 +236,54 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         })
     }
 
+    /**
+     * Every saved area as one file, to load on another device: downloading All of Ireland on a phone and
+     * loading it on the radio is far quicker than the radio's own download of 100,000 tiles. It is
+     * MapLibre's own database, copied as it is; [done] gets what happened, on the main thread.
+     */
+    fun exportTo(open: () -> OutputStream?, done: (String) -> Unit) {
+        val main = Handler(Looper.getMainLooper())
+        val db = File(FileSource.getResourcesCachePath(context), DATABASE)
+        if (!db.isFile) { done("No saved areas to copy yet."); return }
+        val holding = wanted.toList()
+        holding.forEach { regions[it]?.setDownloadState(OfflineRegion.STATE_INACTIVE) }   // nothing written meanwhile
+        Thread {
+            val result = runCatching {
+                (open() ?: error("can't write there")).use { out -> db.inputStream().use { it.copyTo(out, 1 shl 20) } }
+            }
+            main.post {
+                applyNetwork()   // the downloads carry on
+                done(result.fold({ "Copied: ${it / 1_048_576} MB. Load that file on the other device with Load saved areas." },
+                    { "Couldn't copy: ${it.message}" }))
+            }
+        }.start()
+    }
+
+    /** Loads the saved areas of a file [exportTo] made (another device's), beside the ones here. */
+    fun importFrom(open: () -> InputStream?, done: (String) -> Unit) {
+        val main = Handler(Looper.getMainLooper())
+        val copy = File(context.cacheDir, "import-$DATABASE")
+        Thread {
+            val read = runCatching { (open() ?: error("can't read it")).use { input -> copy.outputStream().use { input.copyTo(it, 1 shl 20) } } }
+            main.post {
+                read.exceptionOrNull()?.let { copy.delete(); done("Couldn't read the file: ${it.message}"); return@post }
+                done("Loading the saved areas…")
+                manager.mergeOfflineRegions(copy.path, object : OfflineManager.MergeOfflineRegionsCallback {
+                    override fun onMerge(offlineRegions: Array<OfflineRegion>?) {
+                        copy.delete()
+                        val got = offlineRegions.orEmpty()
+                        got.forEach { watch(it, startNow = false) }
+                        done(if (got.isEmpty()) "That file had no areas this device didn't have." else "Loaded ${got.size} area${if (got.size == 1) "" else "s"}.")
+                    }
+                    override fun onError(error: String) {
+                        copy.delete()
+                        done("Couldn't load it: $error. It must be a file CarDash copied, from the same CarDash version.")
+                    }
+                })
+            }
+        }.start()
+    }
+
     fun remove(id: Long) {
         val r = regions[id] ?: return
         wanted -= id
@@ -266,6 +320,8 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
 
         /** OpenFreeMap's dark map: free, no key. */
         const val STYLE = "https://tiles.openfreemap.org/styles/dark"
+        /** MapLibre's database of saved areas, in its resources folder. */
+        private const val DATABASE = "mbgl-offline.db"
         private const val MAX_ZOOM = 14.0
         private const val PIXEL_RATIO = 1f
     }

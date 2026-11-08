@@ -55,11 +55,11 @@ class CarDashApp : Application() {
         super.onCreate()
         // The map library, once for the whole app
         MapLibre.getInstance(this)
-        // Its downloads, gentler than its own: a few tiles at a time and long timeouts. A saved area
-        // fetched 20 tiles at once over a phone's hotspot, and many timed out.
+        // Its downloads, gentler than its own: 8 tiles at a time and long timeouts. A saved area
+        // fetched 20 tiles at once over a phone's hotspot, and many timed out; 4 was slow.
         HttpRequestUtil.setOkHttpClient(
             OkHttpClient.Builder()
-                .dispatcher(Dispatcher().apply { maxRequests = 8; maxRequestsPerHost = 4 })
+                .dispatcher(Dispatcher().apply { maxRequests = 16; maxRequestsPerHost = 8 })
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)

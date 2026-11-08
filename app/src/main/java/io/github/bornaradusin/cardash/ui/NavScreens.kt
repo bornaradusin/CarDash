@@ -1,5 +1,8 @@
 package io.github.bornaradusin.cardash.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -804,6 +807,23 @@ internal fun OfflineMapCard(state: DashState, actions: DashActions) {
         if (state.nav.here == null) Text("Around here needs a GPS position first.", color = C.muted, fontSize = 13.sp)
         if (state.nav.route == null) Text("Along a route saves the route you're on.", color = C.muted, fontSize = 13.sp)
         SwitchRow("Download on Wi-Fi only", "Waits for Wi-Fi (a phone's hotspot counts) instead of the radio's mobile data", state.wifiOnly, actions.setWifiOnly)
+        // Another device's download, as a file: far quicker than the radio fetching every tile itself
+        var said by remember { mutableStateOf<String?>(null) }
+        val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+            if (uri != null) { said = "Copying…"; actions.exportMaps(uri) { said = it } }
+        }
+        val load = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) { said = "Reading the file…"; actions.importMaps(uri) { said = it } }
+        }
+        Text(
+            "Quicker: download an area with CarDash on your phone, copy it to a file, and load that file here from a USB stick.",
+            color = C.muted, fontSize = 14.sp,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { Wide("Copy saved areas to a file") { save.launch("cardash-maps.db") } }
+            Box(Modifier.weight(1f)) { Wide("Load saved areas") { load.launch(arrayOf("*/*")) } }
+        }
+        said?.let { Text(it, color = C.ink2, fontSize = 14.sp) }
     }
 }
 
