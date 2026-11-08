@@ -798,6 +798,8 @@ internal fun OfflineMapCard(state: DashState, actions: DashActions) {
             color = C.muted, fontSize = 15.sp, lineHeight = 21.sp,
         )
         state.mapAreas.forEach { a -> AreaRow(a, actions) }
+        val old = state.mapAreas.filter { io.github.bornaradusin.cardash.nav.OfflineMaps.stale(it) }
+        if (old.size > 1) Wide("Update all ${old.size} out-of-date areas") { old.forEach { actions.updateMap(it.id) } }
         Text("Save another area", color = C.muted, fontSize = 14.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { Wide("Around here") { actions.saveMapAround() } }
@@ -843,7 +845,9 @@ private fun AreaRow(a: MapArea, actions: DashActions) {
             }
             if (a.complete) {
                 val day = if (a.savedAt > 0) java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.UK).format(java.util.Date(a.savedAt)) else ""
-                Text("Saved $day · ${a.bytes / 1_048_576} MB", color = C.muted, fontSize = 13.sp)
+                if (io.github.bornaradusin.cardash.nav.OfflineMaps.stale(a))
+                    Text("Saved $day · out of date: it updates on Wi-Fi, or tap Update", color = C.red, fontSize = 13.sp)
+                else Text("Saved $day · ${a.bytes / 1_048_576} MB", color = C.muted, fontSize = 13.sp)
             } else {
                 Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(C.track)) {
                     Box(Modifier.fillMaxWidth(a.percent / 100f).fillMaxHeight().background(C.red))

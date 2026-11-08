@@ -98,8 +98,21 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
     private fun hasInternet() =
         context.checkSelfPermission(Manifest.permission.INTERNET) == PackageManager.PERMISSION_GRANTED
 
+    /** Areas being brought up to date by themselves (stale(), on Wi-Fi), so each is started once. */
+    private val updating = HashSet<Long>()
+
+    /** A finished area older than [MAX_AGE_MS] is fetched again, only on Wi-Fi (never the radio's own
+     * mobile data) and not when paused: MapLibre asks for each tile again and gets only what changed. */
+    private fun updateIfStale(id: Long) {
+        val a = _areas.value.firstOrNull { it.id == id } ?: return
+        if (!stale(a) || id in updating || id in paused || !onWifi) return
+        updating += id
+        update(id)
+    }
+
     /** Wi-Fi came or went, or the setting changed: start or hold the downloads. */
     fun applyNetwork() {
+        if (onWifi) _areas.value.forEach { updateIfStale(it.id) }
         regions.values.forEach { r ->
             if (r.id in wanted) r.setDownloadState(if (mayDownload()) OfflineRegion.STATE_ACTIVE else OfflineRegion.STATE_INACTIVE)
         }
@@ -202,6 +215,7 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
             }
         }
         lastCount[id] = s.completedResourceCount
+        if (s.isComplete) updateIfStale(id)
     }
 
     fun pause(id: Long) {
@@ -223,6 +237,7 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         val r = regions[id] ?: return
         r.invalidate(object : OfflineRegion.OfflineRegionInvalidateCallback {
             override fun onInvalidate() {
+                updating -= id
                 val meta = runCatching { JSONObject(String(r.metadata)) }.getOrDefault(JSONObject())
                 meta.put("savedAt", System.currentTimeMillis())
                 _areas.update { list -> list.map { if (it.id == id) it.copy(savedAt = System.currentTimeMillis(), complete = false, percent = 0) else it } }
@@ -320,6 +335,11 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
 
         /** OpenFreeMap's dark map: free, no key. */
         const val STYLE = "https://tiles.openfreemap.org/styles/dark"
+        /** A saved area this old is out of date: OpenFreeMap's map changes every week. */
+        const val MAX_AGE_MS = 60L * 24 * 60 * 60 * 1000
+
+        fun stale(a: MapArea, now: Long = System.currentTimeMillis()) = a.complete && a.savedAt > 0 && now - a.savedAt > MAX_AGE_MS
+
         /** MapLibre's database of saved areas, in its resources folder. */
         private const val DATABASE = "mbgl-offline.db"
         private const val MAX_ZOOM = 14.0
