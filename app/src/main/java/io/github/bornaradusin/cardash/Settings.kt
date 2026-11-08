@@ -138,6 +138,42 @@ class Settings(context: Context) {
         _shiftHints.value = v
     }
 
+    private fun points(key: String, default: List<Int>): List<Int> {
+        val saved = sp.getString(key, null)?.split(',')?.map { it.toIntOrNull() } ?: return default
+        return default.mapIndexed { i, d -> saved.getOrNull(i) ?: d }
+    }
+
+    private val _shiftUpAt = MutableStateFlow(points("shiftUpAt", SHIFT_UP_DEFAULT))
+    /** The change-up sign, gear by gear (1st first): the rpm it comes up at. */
+    val shiftUpAt: StateFlow<List<Int>> = _shiftUpAt
+
+    private val _shiftDownAt = MutableStateFlow(points("shiftDownAt", SHIFT_DOWN_DEFAULT))
+    /** The change-down sign, gear by gear (1st first, which has none): the rpm it comes up under. */
+    val shiftDownAt: StateFlow<List<Int>> = _shiftDownAt
+
+    fun setShiftUpAt(gear: Int, rpm: Int) {
+        if (gear !in 1..SHIFT_UP_DEFAULT.size) return
+        val r = (rpm / SHIFT_POINT_STEP * SHIFT_POINT_STEP).coerceIn(SHIFT_UP_MIN, SHIFT_UP_MAX)
+        val list = _shiftUpAt.value.toMutableList().also { it[gear - 1] = r }
+        sp.edit().putString("shiftUpAt", list.joinToString(",")).apply()
+        _shiftUpAt.value = list
+    }
+
+    fun setShiftDownAt(gear: Int, rpm: Int) {
+        if (gear !in 2..SHIFT_DOWN_DEFAULT.size) return
+        val r = (rpm / SHIFT_POINT_STEP * SHIFT_POINT_STEP).coerceIn(SHIFT_DOWN_MIN, SHIFT_DOWN_MAX)
+        val list = _shiftDownAt.value.toMutableList().also { it[gear - 1] = r }
+        sp.edit().putString("shiftDownAt", list.joinToString(",")).apply()
+        _shiftDownAt.value = list
+    }
+
+    /** Back to the points suggested for the TT's 2.0 TDI. */
+    fun resetShiftPoints() {
+        sp.edit().remove("shiftUpAt").remove("shiftDownAt").apply()
+        _shiftUpAt.value = SHIFT_UP_DEFAULT
+        _shiftDownAt.value = SHIFT_DOWN_DEFAULT
+    }
+
     private val _topGear = MutableStateFlow(sp.getFloat("topGearRpmPerKmh", 0f))
     /**
      * Engine rpm per km/h in top gear, learnt while driving (the lowest steady figure seen), so
@@ -190,6 +226,18 @@ class Settings(context: Context) {
     }
 
     companion object {
+        /**
+         * Suggested for the TT's 2.0 TDI (350 Nm from 1,750 to 2,500 rpm): change up at 2,000, or
+         * later in the low gears so the next one doesn't land under 1,500; change down under 1,100,
+         * where a diesel judders and the dual-mass flywheel takes the strain. Up to 8 gears.
+         */
+        val SHIFT_UP_DEFAULT = listOf(2700, 2300, 2100, 2000, 2000, 2000, 2000, 2000)
+        val SHIFT_DOWN_DEFAULT = listOf(0, 1100, 1100, 1100, 1100, 1100, 1100, 1100)
+        const val SHIFT_POINT_STEP = 100
+        const val SHIFT_UP_MIN = 1200
+        const val SHIFT_UP_MAX = 4500
+        const val SHIFT_DOWN_MIN = 800
+        const val SHIFT_DOWN_MAX = 2500
         val DEFAULT_ACCENT = 0xFFFF2D40.toInt()
         const val SPEED_WARN_DEFAULT = 150
         const val SPEED_WARN_MIN = 50

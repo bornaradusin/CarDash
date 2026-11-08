@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import android.os.StatFs
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -26,6 +27,7 @@ import org.maplibre.android.offline.OfflineRegionError
 import org.maplibre.android.offline.OfflineRegionStatus
 import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
 import org.maplibre.geojson.LineString
+import org.maplibre.geojson.MultiPolygon
 import org.maplibre.geojson.Point
 
 /** A saved map area, as Settings shows it. */
@@ -136,11 +138,17 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         create(OfflineTilePyramidRegionDefinition(STYLE, bounds, 6.0, MAX_ZOOM, PIXEL_RATIO), name)
     }
 
-    /** The whole island of Ireland, up to street detail. */
-    fun saveIreland() {
-        val bounds = LatLngBounds.from(55.45, -5.35, 51.35, -10.7)
-        create(OfflineTilePyramidRegionDefinition(STYLE, bounds, 5.0, MAX_ZOOM, PIXEL_RATIO), "All of Ireland")
+    /** A whole country, up to street detail: the tiles its outline covers, not a box round it, so
+     * the neighbours don't come with it. */
+    fun saveCountry(c: Country) {
+        val shape = MultiPolygon.fromJson(c.geometry)
+        create(OfflineGeometryRegionDefinition(STYLE, shape, 5.0, MAX_ZOOM, PIXEL_RATIO), c.name)
     }
+
+    /** Room left for saved maps, in MB. */
+    fun freeMb(): Long = runCatching {
+        StatFs(FileSource.getResourcesCachePath(context)).availableBytes / 1_048_576
+    }.getOrDefault(Long.MAX_VALUE)
 
     /** The roads along a route (the tiles the line passes through). */
     fun saveAlong(route: Route, name: String) {
@@ -339,6 +347,27 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         const val MAX_AGE_MS = 60L * 24 * 60 * 60 * 1000
 
         fun stale(a: MapArea, now: Long = System.currentTimeMillis()) = a.complete && a.savedAt > 0 && now - a.savedAt > MAX_AGE_MS
+
+        /** OpenFreeMap's tiles take about this much each, on average, saved: towns more, sea and
+         * countryside less. For the sizes shown before a download. */
+        private const val TILE_KB = 18.0
+
+        fun mbFor(tiles: Long): Long = maxOf(1L, kotlin.math.round(tiles * TILE_KB / 1024).toLong())
+
+        /** Kilometres across one tile at street detail (zoom 14) at this latitude. */
+        private fun side14(lat: Double) = 40075.0 * kotlin.math.cos(Math.toRadians(lat)) / 16384
+
+        /** Tiles in the square [km] round [here], zooms 6 to 14 (the ones above add a third). */
+        fun tilesAround(here: Pos, km: Double): Long {
+            val n = 2 * km / side14(here.lat) + 1
+            return (n * n * 4 / 3).toLong()
+        }
+
+        /** Tiles the route's line passes through, zooms 8 to 14: each zoom up halves them. */
+        fun tilesAlong(route: Route): Long {
+            val mid = route.points.getOrNull(route.points.size / 2) ?: return 0
+            return (2.6 * route.distance / 1000 / side14(mid.lat) + 14).toLong()
+        }
 
         /** MapLibre's database of saved areas, in its resources folder. */
         private const val DATABASE = "mbgl-offline.db"

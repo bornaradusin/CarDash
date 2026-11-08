@@ -39,6 +39,14 @@ class Gears(context: Context) {
     /** The gear the car is in now, or null (stopped, between gears, clutch down, or not learnt yet). */
     val gear: StateFlow<Int?> = _gear
 
+    private val _rolling = MutableStateFlow(false)
+    /** Rolling with the engine at tickover (clutch down or out of gear): the revs have stopped
+     * following the speed. No gear is shown and no change hint, as nothing is driving the wheels. */
+    val rolling: StateFlow<Boolean> = _rolling
+
+    /** The last couple of seconds of revs and speed, to tell whether one follows the other. */
+    private val recent = ArrayDeque<Triple<Long, Float, Float>>()
+
     private val _ratios = MutableStateFlow<List<Float>>(emptyList())
     /** rpm per km/h of each gear, 1st first, once they've all been found (for the change up / down signs). */
     val learnt: StateFlow<List<Float>> = _ratios
@@ -62,12 +70,17 @@ class Gears(context: Context) {
         val now = System.currentTimeMillis()
         if (rpm == null || kmh == null || kmh < 3f) {
             _gear.value = null
+            _rolling.value = false
+            recent.clear()
             steadySince = 0L
             saveIfDue(now)
             return
         }
         val ratio = rpm / kmh
-        _gear.value = gearFor(ratio)
+        val idle = isRolling(now, rpm, kmh)
+        _rolling.value = idle
+        _gear.value = if (idle) null else gearFor(ratio)
+        if (idle) { steadySince = 0L; return }
         // Learning: driving (not crawling, not idling) with the figure holding steady
         if (kmh < 8f || rpm < 900f || ratio !in MIN_RATIO..MAX_RATIO) {
             steadySince = 0L
@@ -84,6 +97,24 @@ class Gears(context: Context) {
         dirty = true
         if (now - lastLook > 10_000L) look()
         saveIfDue(now)
+    }
+
+    /**
+     * In gear, the revs rise and fall with the speed (the same rpm per km/h). With the clutch down or
+     * in neutral the engine sits at tickover while the car speeds up or slows down by itself: over the
+     * last two seconds the speed changed (4 % or more) and the revs, at tickover, didn't go with it.
+     * It holds until the revs follow the speed again or leave tickover.
+     */
+    private fun isRolling(now: Long, rpm: Float, kmh: Float): Boolean {
+        recent.addLast(Triple(now, rpm, kmh))
+        while (recent.isNotEmpty() && now - recent.first().first > WINDOW_MS) recent.removeFirst()
+        if (rpm > IDLE_MAX) return false
+        val first = recent.first()
+        if (now - first.first < WINDOW_MS / 2) return _rolling.value
+        val speedChange = ln(kmh / first.third)
+        val revChange = ln(rpm / first.second)
+        if (abs(speedChange) < 0.04f) return _rolling.value     // too little change to tell: as it was
+        return abs(revChange - speedChange) > 0.5f * abs(speedChange)
     }
 
     @Synchronized
@@ -173,6 +204,9 @@ class Gears(context: Context) {
     private fun ratioOf(bin: Int): Float = exp(LN_MIN + (bin + 0.5f) * (LN_MAX - LN_MIN) / BINS)
 
     companion object {
+        /** Over this, the engine isn't at tickover (the TDI idles at about 800). */
+        private const val IDLE_MAX = 1050f
+        private const val WINDOW_MS = 2_000L
         const val DEFAULT_COUNT = 6
         const val MIN_COUNT = 4
         const val MAX_COUNT = 8

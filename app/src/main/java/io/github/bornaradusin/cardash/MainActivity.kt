@@ -161,6 +161,9 @@ class MainActivity : ComponentActivity() {
             setTopGear = { app.settings.setTopGear(it) },
             setGearCount = { app.gears.setCount(it) },
             setShiftHints = { app.settings.setShiftHints(it) },
+            setShiftUpAt = { g, r -> app.settings.setShiftUpAt(g, r) },
+            setShiftDownAt = { g, r -> app.settings.setShiftDownAt(g, r) },
+            resetShiftPoints = { app.settings.resetShiftPoints() },
             relearnGears = { app.gears.forget() },
             search = { q -> Places.search(q, app.nav.state.value.here, app.settings.googleKey.value) },
             preview = { p -> app.nav.preview(p.pos) },
@@ -182,7 +185,8 @@ class MainActivity : ComponentActivity() {
                 C.setAccent(Color(app.settings.accent.value))
             },
             saveMapAround = { app.nav.state.value.here?.let { app.offlineMaps.saveAround(it, 50.0, "Around here, 50 km") } },
-            saveMapIreland = { app.offlineMaps.saveIreland() },
+            saveMapCountry = { app.offlineMaps.saveCountry(it) },
+            freeMapMb = { app.offlineMaps.freeMb() },
             saveMapRoute = {
                 val n = app.nav.state.value
                 n.route?.let { app.offlineMaps.saveAlong(it, "Route to ${n.destination?.name ?: "destination"}") }
@@ -224,6 +228,9 @@ class MainActivity : ComponentActivity() {
             val gearsFound by app.gears.found.collectAsState()
             val gearCount by app.gears.count.collectAsState()
             val gearRatios by app.gears.learnt.collectAsState()
+            val rolling by app.gears.rolling.collectAsState()
+            val shiftUpAt by app.settings.shiftUpAt.collectAsState()
+            val shiftDownAt by app.settings.shiftDownAt.collectAsState()
             val shiftHints by app.settings.shiftHints.collectAsState()
             val accent by app.settings.accent.collectAsState()
             val spoken by app.settings.spoken.collectAsState()
@@ -273,6 +280,9 @@ class MainActivity : ComponentActivity() {
                 shiftWarnRpm = shiftWarnRpm,
                 topGear = topGear,
                 gear = gear,
+                rolling = rolling,
+                shiftUpAt = shiftUpAt,
+                shiftDownAt = shiftDownAt,
                 gearsFound = gearsFound,
                 gearCount = gearCount,
                 gearRatios = gearRatios,

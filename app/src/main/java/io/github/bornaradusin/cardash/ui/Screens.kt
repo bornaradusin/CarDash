@@ -61,6 +61,9 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.key
+import kotlin.math.roundToInt
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -168,6 +171,11 @@ data class DashState(
     val gearCount: Int,
     /** Each gear's rpm per km/h, 1st first, once learnt; and whether the change up / down signs show. */
     val gearRatios: List<Float>,
+    /** Rolling at tickover: clutch down or out of gear. */
+    val rolling: Boolean = false,
+    /** Where the change up / down signs come up, gear by gear (1st first). */
+    val shiftUpAt: List<Int> = Settings.SHIFT_UP_DEFAULT,
+    val shiftDownAt: List<Int> = Settings.SHIFT_DOWN_DEFAULT,
     val shiftHints: Boolean,
     /** The accent colour, ARGB. */
     val accent: Int,
@@ -224,6 +232,9 @@ class DashActions(
     val setTopGear: (Float) -> Unit,
     val setGearCount: (Int) -> Unit,
     val setShiftHints: (Boolean) -> Unit,
+    val setShiftUpAt: (gear: Int, rpm: Int) -> Unit,
+    val setShiftDownAt: (gear: Int, rpm: Int) -> Unit,
+    val resetShiftPoints: () -> Unit,
     /** Forgets the learnt gears and starts again. */
     val relearnGears: () -> Unit,
     // Navigation
@@ -245,7 +256,9 @@ class DashActions(
     val setAccent: (Int) -> Unit,
     // Offline map
     val saveMapAround: () -> Unit,
-    val saveMapIreland: () -> Unit,
+    val saveMapCountry: (io.github.bornaradusin.cardash.nav.Country) -> Unit,
+    /** Room left on the radio for saved maps, in MB. */
+    val freeMapMb: () -> Long,
     val saveMapRoute: () -> Unit,
     val pauseMap: (Long) -> Unit,
     val resumeMap: (Long) -> Unit,
@@ -572,28 +585,33 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
  * starts to judder and the flywheel takes the strain. Up is +1, down -1, with the gear to go to
  * once CarDash has learnt the gears (null before that).
  */
-internal fun shiftHint(rpm: Float?, kmh: Float?, pedal: Float?, gear: Int?, ratios: List<Float>): Pair<Int, Int?>? {
+internal fun shiftHint(
+    rpm: Float?, kmh: Float?, pedal: Float?, gear: Int?, ratios: List<Float>, rolling: Boolean = false,
+    upAt: List<Int> = Settings.SHIFT_UP_DEFAULT, downAt: List<Int> = Settings.SHIFT_DOWN_DEFAULT,
+): Pair<Int, Int?>? {
     if (rpm == null || kmh == null || kmh < 5f) return null
+    // Rolling at tickover, clutch down or out of gear: nothing to change
+    if (rolling) return null
     val known = ratios.isNotEmpty()
     // Gears learnt but none matching: changing gear, clutch down or coasting
     if (known && gear == null) return null
-    val heavy = (pedal ?: 0f) >= 50f
-    val upAt = if (heavy) 2500f else 2000f
-    if (rpm >= upAt) {
-        if (!known) return 1 to null
-        val g = gear ?: return null
-        if (g >= ratios.size) return null
-        val next = rpm * ratios[g] / ratios[g - 1]
-        return if (next >= 1500f) 1 to g + 1 else null
+    val p = pedal ?: 0f
+    // The foot well down: change up later, and change down sooner, for the pull it needs
+    val upExtra = if (p >= 50f) 500 else 0
+    val downExtra = if (p >= 30f) 200 else 0
+    // Low revs only strain the engine with the foot down: off the pedal (when the car says so) there's
+    // nothing to change down for
+    val offPedal = pedal != null && pedal < 5f
+    if (!known) {
+        // Not learnt yet, so no gear: the rpm alone, the points for the middle gears
+        if (rpm >= 2000f + upExtra) return 1 to null
+        if (!offPedal && kmh >= 20f && rpm < 1100f + downExtra) return -1 to null
+        return null
     }
-    val lugging = rpm < 1100f || ((pedal ?: 0f) >= 30f && rpm < 1300f)
-    if (lugging && kmh >= 10f) {
-        if (!known) return if (kmh >= 20f) -1 to null else null
-        val g = gear ?: return null
-        if (g <= 1) return null
-        val lower = rpm * ratios[g - 2] / ratios[g - 1]
-        return if (lower <= 3000f) -1 to g - 1 else null
-    }
+    val g = gear ?: return null
+    // The points you set in Settings › Driving, gear by gear
+    if (g < ratios.size && rpm >= (upAt.getOrNull(g - 1) ?: 2000) + upExtra) return 1 to g + 1
+    if (g > 1 && !offPedal && kmh >= 10f && rpm < (downAt.getOrNull(g - 1) ?: 1100) + downExtra) return -1 to g - 1
     return null
 }
 
@@ -601,7 +619,7 @@ internal fun shiftHint(rpm: Float?, kmh: Float?, pedal: Float?, gear: Int?, rati
 @Composable
 private fun rememberShiftHint(state: DashState): Pair<Int, Int?>? {
     val r = state.obd.readings
-    val now = shiftHint(r.rpm, r.speedKmh, r.pedalPct, state.gear, state.gearRatios)
+    val now = shiftHint(r.rpm, r.speedKmh, r.pedalPct, state.gear, state.gearRatios, state.rolling, state.shiftUpAt, state.shiftDownAt)
     val held = remember { arrayOfNulls<Pair<Int, Int?>>(1) }
     val since = remember { longArrayOf(0L) }
     val t = System.currentTimeMillis()
@@ -1403,9 +1421,30 @@ private fun AppsScreen(apps: List<AppEntry>, actions: DashActions) {
 
 // ---------- settings ----------
 
+/** Settings' sections, down the left, each with its own cards. */
+private enum class SettingsSection(val title: String, val sub: String) {
+    DRIVING("Driving", "Warnings and gears"),
+    NAVIGATION("Navigation", "Map, key, offline maps"),
+    CAR("Car", "OBD, CAN box, fuel"),
+    LOOK("Look", "Colour, name, screen"),
+    MUSIC("Music", "The music app"),
+    PERMISSIONS("Permissions", "What CarDash may use"),
+}
+
+private val SettingsSection.icon: ImageVector
+    get() = when (this) {
+        SettingsSection.DRIVING -> Ic.gauge
+        SettingsSection.NAVIGATION -> Ic.map
+        SettingsSection.CAR -> Ic.car
+        SettingsSection.LOOK -> Ic.star
+        SettingsSection.MUSIC -> Ic.music
+        SettingsSection.PERMISSIONS -> Ic.check
+    }
+
 @Composable
 private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> Unit) {
     val context = LocalContext.current
+    var section by rememberSaveable { mutableStateOf(SettingsSection.DRIVING) }
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = close), contentAlignment = Alignment.Center) {
@@ -1419,218 +1458,374 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
             )
         }
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(
-                Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                AccentCard(state, actions)
-                Card("Name") {
-                    var name by remember(state.name) { mutableStateOf(state.name) }
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it.take(20) },
-                        singleLine = true,
-                        textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Wide("Save name") { actions.setName(name) }
-                    Text("Tapping the name on Home changes it too.", color = C.muted, fontSize = 14.sp)
-                }
-                Card("Music") {
-                    val player = (state.musicApp?.let { pkg -> state.apps.firstOrNull { it.pkg == pkg } } ?: Apps.defaultFor(2, state.apps))?.label
-                    Text("Music player: ${player ?: "none found"}", color = C.ink, fontSize = 17.sp)
-                    Text("Play on Home starts it when nothing is playing", color = C.muted, fontSize = 14.sp)
-                    var choosing by remember { mutableStateOf(false) }
-                    Wide("Choose the music app") { choosing = true }
-                    if (choosing) AppPicker(state.apps, onPick = { actions.setMusicApp(it); choosing = false }, onDismiss = { choosing = false })
-                }
-                Card("Screen") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Full screen", color = C.ink, fontSize = 17.sp)
-                            Text("Hides the radio's bars; swipe from the edge to see them", color = C.muted, fontSize = 14.sp)
-                        }
-                        Switch(
-                            checked = state.fullScreen,
-                            onCheckedChange = actions.setFullScreen,
-                            colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
-                        )
-                    }
-                    Wide("Make CarDash the home screen", actions.chooseHome)
-                }
-                Card("Speed warning") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Warn me when I'm too fast", color = C.ink, fontSize = 17.sp)
-                            Text("\"SLOW THE FUCK DOWN\" across the whole screen", color = C.muted, fontSize = 14.sp)
-                        }
-                        Switch(
-                            checked = state.speedWarnOn,
-                            onCheckedChange = actions.setSpeedWarnOn,
-                            colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
-                        )
-                    }
-                    if (state.speedWarnOn) {
-                        Stepper(
-                            "Over", "${state.speedWarnKmh} km/h",
-                            less = { actions.setSpeedWarnKmh(state.speedWarnKmh - Settings.SPEED_WARN_STEP) },
-                            more = { actions.setSpeedWarnKmh(state.speedWarnKmh + Settings.SPEED_WARN_STEP) },
-                        )
-                        Text("It goes away once you're 5 km/h under again.", color = C.muted, fontSize = 14.sp)
-                    }
-                }
-                Card("Gear") {
-                    Text("The gear you're in, in the middle of the RPM dial", color = C.ink, fontSize = 17.sp)
-                    Text("The car doesn't send it, so CarDash learns each gear's revs per km/h as you drive.", color = C.muted, fontSize = 14.sp)
-                    Stepper(
-                        "Gears", "${state.gearCount}",
-                        less = { actions.setGearCount(state.gearCount - 1) },
-                        more = { actions.setGearCount(state.gearCount + 1) },
-                    )
-                    Text(
-                        if (state.gearsFound >= state.gearCount) "Learnt: all ${state.gearCount} gears."
-                        else "Learning: ${state.gearsFound} of ${state.gearCount} found. Drive a few seconds in each gear: it shows the gear once it knows them all, or all but 1st or top.",
-                        color = C.muted, fontSize = 14.sp,
-                    )
-                    Wide("Learn the gears again") { actions.relearnGears() }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Change up / down signs", color = C.ink, fontSize = 17.sp)
-                            Text("By the dials, only when it's time: for economy without lugging the engine", color = C.muted, fontSize = 14.sp)
-                        }
-                        Switch(
-                            checked = state.shiftHints,
-                            onCheckedChange = actions.setShiftHints,
-                            colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
-                        )
-                    }
-                }
-                Card("Shift up") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Tell me to change up", color = C.ink, fontSize = 17.sp)
-                            Text("\"SHIFT UP\" across the whole screen", color = C.muted, fontSize = 14.sp)
-                        }
-                        Switch(
-                            checked = state.shiftWarnOn,
-                            onCheckedChange = actions.setShiftWarnOn,
-                            colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
-                        )
-                    }
-                    if (state.shiftWarnOn) {
-                        Stepper(
-                            "Over", "${state.shiftWarnRpm} rpm",
-                            less = { actions.setShiftWarnRpm(state.shiftWarnRpm - Settings.SHIFT_WARN_STEP) },
-                            more = { actions.setShiftWarnRpm(state.shiftWarnRpm + Settings.SHIFT_WARN_STEP) },
-                        )
-                        Text(
-                            if (state.topGear > 0f) "Not in top gear: there's no gear left to change up to."
-                            else "Not in top gear, once CarDash has learnt it: drive a minute over 50 km/h in top gear.",
-                            color = C.muted, fontSize = 14.sp,
-                        )
-                    }
-                }
-                NavigationCard(state, actions)
-                Card("Permissions") {
-                    Permission("Notification access", "Google Maps' next turn, and music controls", state.hasNotifications, actions.allowNotifications)
-                    Permission("Location", "Your position on the map, for directions", state.nav.permission, actions.allowLocation)
-                }
+            Column(Modifier.width(232.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SettingsSection.entries.forEach { s -> SectionTab(s, s == section) { section = s } }
             }
-            Column(
-                Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Card("OBD dongle") {
-                    StatusLine(state.obd)
-                    state.obd.adapter?.let { Text("Dongle: $it${state.obd.baud?.let { b -> " at $b baud" } ?: ""}", color = C.muted, fontSize = 14.sp) }
-                    state.obd.protocol?.let { Text("Car's protocol: $it", color = C.muted, fontSize = 14.sp) }
-                    if (state.obd.link == Link.NEEDS_PERMISSION) Wide("Ask for USB access again", actions.askUsbAgain)
-                    Text("Only one app can use the dongle at a time, so close Torque while CarDash is reading it.", color = C.muted, fontSize = 14.sp)
-                    if (state.obd.log.isNotEmpty()) {
-                        Column(
-                            Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF05060A))
-                                .verticalScroll(rememberScrollState(Int.MAX_VALUE)).padding(10.dp),
-                        ) {
-                            state.obd.log.forEach { Text(it, color = C.ink2, fontSize = 12.sp, fontFamily = FontFamily.Monospace) }
+            // A fresh scroll for each section, from the top
+            key(section) {
+                Column(
+                    Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    when (section) {
+                        SettingsSection.DRIVING -> {
+                            TwoColumns(
+                                { SpeedWarningCard(state, actions); ShiftUpCard(state, actions) },
+                                { GearCard(state, actions) },
+                            )
+                            ShiftPointsCard(state, actions)
                         }
+                        SettingsSection.NAVIGATION -> TwoColumns({ NavigationCard(state, actions) }, { OfflineMapCard(state, actions) })
+                        SettingsSection.CAR -> TwoColumns({ ObdCard(state, actions); FuelCard(state, actions) }, { CanCard(state, actions) })
+                        SettingsSection.LOOK -> TwoColumns({ AccentCard(state, actions) }, { NameCard(state, actions); ScreenCard(state, actions) })
+                        SettingsSection.MUSIC -> TwoColumns({ MusicCard(state, actions) }, { })
+                        SettingsSection.PERMISSIONS -> TwoColumns({ PermissionsCard(state, actions) }, { })
                     }
                 }
-                CanCard(state, actions)
-                Card("Fuel use") {
-                    val r = state.obd.readings
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Diesel engine", color = C.ink, fontSize = 17.sp)
-                            Text("A diesel's fuel follows engine load, not air flow", color = C.muted, fontSize = 14.sp)
-                        }
-                        Switch(
-                            checked = state.diesel,
-                            onCheckedChange = actions.setDiesel,
-                            colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
-                        )
-                    }
-                    Text(
-                        when {
-                            r.fuelRateLph != null -> "The engine reports its own fuel use: ${fmt(r.fuelRateLph, 1)} L/h"
-                            r.dieselLph != null -> "Now: ${fmt(r.dieselLph, 1)} L/h, worked out from engine load and RPM"
-                            r.fuelLph != null -> "Now: ${fmt(r.fuelLph!!, 1)} L/h, worked out from the air flow" +
-                                if (r.fuelFactor != 1f) " (matched to the car: ×${fmt(r.fuelFactor, 2)})" else ""
-                            else -> "Not reading yet"
-                        },
-                        color = C.ink, fontSize = 16.sp,
-                    )
-                    Text(
-                        "If it doesn't match your car's computer, idle with the engine warm, type what the car shows in L/h and tap Match.",
-                        color = C.muted, fontSize = 14.sp,
-                    )
-                    var carSays by remember { mutableStateOf("") }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = carSays,
-                            onValueChange = { v -> carSays = v.filter { it.isDigit() || it == '.' || it == ',' }.take(5) },
-                            singleLine = true,
-                            placeholder = { Text("0.7", color = C.muted) },
-                            textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                            modifier = Modifier.width(120.dp),
-                        )
-                        Text("L/h", color = C.muted, fontSize = 16.sp)
-                        Box(Modifier.weight(1f)) {
-                            Wide("Match") { carSays.replace(',', '.').toFloatOrNull()?.let(actions.matchFuel) }
-                        }
-                    }
-                    val t = state.obd.trip
-                    Text(
-                        "More accurate: after a drive of a few km, reset the car's short-term average at the start, then type its average here. " +
-                            "CarDash's own for this drive: ${t.avgL100?.let { fmt(it.toFloat(), 1) + " L/100" } ?: "not enough distance yet"}.",
-                        color = C.muted, fontSize = 14.sp,
-                    )
-                    var carAvg by remember { mutableStateOf("") }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
-                            value = carAvg,
-                            onValueChange = { v -> carAvg = v.filter { it.isDigit() || it == '.' || it == ',' }.take(5) },
-                            singleLine = true,
-                            placeholder = { Text("8.5", color = C.muted) },
-                            textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                            modifier = Modifier.width(120.dp),
-                        )
-                        Text("L/100", color = C.muted, fontSize = 16.sp)
-                        Box(Modifier.weight(1f)) {
-                            Wide("Match drive") { carAvg.replace(',', '.').toFloatOrNull()?.let(actions.matchFuelAverage) }
-                        }
-                    }
-                    Wide("Undo matching", actions.resetFuel)
-                }
-                OfflineMapCard(state, actions)
             }
         }
     }
 }
+
+@Composable
+private fun SectionTab(s: SettingsSection, chosen: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        Modifier.fillMaxWidth().clip(shape)
+            .then(if (chosen) Modifier.background(C.panelHi).border(1.dp, C.lineHi, shape) else Modifier)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.width(4.dp).height(36.dp).clip(RoundedCornerShape(2.dp)).background(if (chosen) C.red else Color.Transparent))
+        Icon(s.icon, null, tint = if (chosen) C.red else C.ink2, modifier = Modifier.size(24.dp))
+        Column(Modifier.weight(1f)) {
+            Text(s.title, color = if (chosen) C.ink else C.ink2, fontSize = 18.sp, fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal)
+            Text(s.sub, color = C.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** Cards side by side in two columns, each column its own height. */
+@Composable
+private fun TwoColumns(left: @Composable () -> Unit, right: @Composable () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) { left() }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) { right() }
+    }
+}
+
+@Composable
+private fun NameCard(state: DashState, actions: DashActions) {
+    Card("Name") {
+        var name by remember(state.name) { mutableStateOf(state.name) }
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it.take(20) },
+            singleLine = true,
+            textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Wide("Save name") { actions.setName(name) }
+        Text("Tapping the name on Home changes it too.", color = C.muted, fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun MusicCard(state: DashState, actions: DashActions) {
+    Card("Music") {
+        val player = (state.musicApp?.let { pkg -> state.apps.firstOrNull { it.pkg == pkg } } ?: Apps.defaultFor(2, state.apps))?.label
+        Text("Music player: ${player ?: "none found"}", color = C.ink, fontSize = 17.sp)
+        Text("Play on Home starts it when nothing is playing", color = C.muted, fontSize = 14.sp)
+        var choosing by remember { mutableStateOf(false) }
+        Wide("Choose the music app") { choosing = true }
+        if (choosing) AppPicker(state.apps, onPick = { actions.setMusicApp(it); choosing = false }, onDismiss = { choosing = false })
+    }
+}
+
+@Composable
+private fun ScreenCard(state: DashState, actions: DashActions) {
+    Card("Screen") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Full screen", color = C.ink, fontSize = 17.sp)
+                Text("Hides the radio's bars; swipe from the edge to see them", color = C.muted, fontSize = 14.sp)
+            }
+            Switch(
+                checked = state.fullScreen,
+                onCheckedChange = actions.setFullScreen,
+                colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
+            )
+        }
+        Wide("Make CarDash the home screen", actions.chooseHome)
+    }
+}
+
+@Composable
+private fun SpeedWarningCard(state: DashState, actions: DashActions) {
+    Card("Speed warning") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Warn me when I'm too fast", color = C.ink, fontSize = 17.sp)
+                Text("\"SLOW THE FUCK DOWN\" across the whole screen", color = C.muted, fontSize = 14.sp)
+            }
+            Switch(
+                checked = state.speedWarnOn,
+                onCheckedChange = actions.setSpeedWarnOn,
+                colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
+            )
+        }
+        if (state.speedWarnOn) {
+            Stepper(
+                "Over", "${state.speedWarnKmh} km/h",
+                less = { actions.setSpeedWarnKmh(state.speedWarnKmh - Settings.SPEED_WARN_STEP) },
+                more = { actions.setSpeedWarnKmh(state.speedWarnKmh + Settings.SPEED_WARN_STEP) },
+            )
+            Text("It goes away once you're 5 km/h under again.", color = C.muted, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun GearCard(state: DashState, actions: DashActions) {
+    Card("Gear") {
+        Text("The gear you're in, in the middle of the RPM dial", color = C.ink, fontSize = 17.sp)
+        Text("The car doesn't send it, so CarDash learns each gear's revs per km/h as you drive.", color = C.muted, fontSize = 14.sp)
+        Stepper(
+            "Gears", "${state.gearCount}",
+            less = { actions.setGearCount(state.gearCount - 1) },
+            more = { actions.setGearCount(state.gearCount + 1) },
+        )
+        Text(
+            if (state.gearsFound >= state.gearCount) "Learnt: all ${state.gearCount} gears."
+            else "Learning: ${state.gearsFound} of ${state.gearCount} found. Drive a few seconds in each gear: it shows the gear once it knows them all, or all but 1st or top.",
+            color = C.muted, fontSize = 14.sp,
+        )
+        Wide("Learn the gears again") { actions.relearnGears() }
+    }
+}
+
+@Composable
+private fun ShiftUpCard(state: DashState, actions: DashActions) {
+    Card("Shift up") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Tell me to change up", color = C.ink, fontSize = 17.sp)
+                Text("\"SHIFT UP\" across the whole screen", color = C.muted, fontSize = 14.sp)
+            }
+            Switch(
+                checked = state.shiftWarnOn,
+                onCheckedChange = actions.setShiftWarnOn,
+                colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
+            )
+        }
+        if (state.shiftWarnOn) {
+            Stepper(
+                "Over", "${state.shiftWarnRpm} rpm",
+                less = { actions.setShiftWarnRpm(state.shiftWarnRpm - Settings.SHIFT_WARN_STEP) },
+                more = { actions.setShiftWarnRpm(state.shiftWarnRpm + Settings.SHIFT_WARN_STEP) },
+            )
+            Text(
+                if (state.topGear > 0f) "Not in top gear: there's no gear left to change up to."
+                else "Not in top gear, once CarDash has learnt it: drive a minute over 50 km/h in top gear.",
+                color = C.muted, fontSize = 14.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionsCard(state: DashState, actions: DashActions) {
+    Card("Permissions") {
+        Permission("Notification access", "Google Maps' next turn, and music controls", state.hasNotifications, actions.allowNotifications)
+        Permission("Location", "Your position on the map, for directions", state.nav.permission, actions.allowLocation)
+    }
+}
+
+@Composable
+private fun ObdCard(state: DashState, actions: DashActions) {
+    Card("OBD dongle") {
+        StatusLine(state.obd)
+        state.obd.adapter?.let { Text("Dongle: $it${state.obd.baud?.let { b -> " at $b baud" } ?: ""}", color = C.muted, fontSize = 14.sp) }
+        state.obd.protocol?.let { Text("Car's protocol: $it", color = C.muted, fontSize = 14.sp) }
+        if (state.obd.link == Link.NEEDS_PERMISSION) Wide("Ask for USB access again", actions.askUsbAgain)
+        Text("Only one app can use the dongle at a time, so close Torque while CarDash is reading it.", color = C.muted, fontSize = 14.sp)
+        if (state.obd.log.isNotEmpty()) {
+            Column(
+                Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF05060A))
+                    .verticalScroll(rememberScrollState(Int.MAX_VALUE)).padding(10.dp),
+            ) {
+                state.obd.log.forEach { Text(it, color = C.ink2, fontSize = 12.sp, fontFamily = FontFamily.Monospace) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FuelCard(state: DashState, actions: DashActions) {
+    Card("Fuel use") {
+        val r = state.obd.readings
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Diesel engine", color = C.ink, fontSize = 17.sp)
+                Text("A diesel's fuel follows engine load, not air flow", color = C.muted, fontSize = 14.sp)
+            }
+            Switch(
+                checked = state.diesel,
+                onCheckedChange = actions.setDiesel,
+                colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
+            )
+        }
+        Text(
+            when {
+                r.fuelRateLph != null -> "The engine reports its own fuel use: ${fmt(r.fuelRateLph, 1)} L/h"
+                r.dieselLph != null -> "Now: ${fmt(r.dieselLph, 1)} L/h, worked out from engine load and RPM"
+                r.fuelLph != null -> "Now: ${fmt(r.fuelLph!!, 1)} L/h, worked out from the air flow" +
+                    if (r.fuelFactor != 1f) " (matched to the car: ×${fmt(r.fuelFactor, 2)})" else ""
+                else -> "Not reading yet"
+            },
+            color = C.ink, fontSize = 16.sp,
+        )
+        Text(
+            "If it doesn't match your car's computer, idle with the engine warm, type what the car shows in L/h and tap Match.",
+            color = C.muted, fontSize = 14.sp,
+        )
+        var carSays by remember { mutableStateOf("") }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(
+                value = carSays,
+                onValueChange = { v -> carSays = v.filter { it.isDigit() || it == '.' || it == ',' }.take(5) },
+                singleLine = true,
+                placeholder = { Text("0.7", color = C.muted) },
+                textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                modifier = Modifier.width(120.dp),
+            )
+            Text("L/h", color = C.muted, fontSize = 16.sp)
+            Box(Modifier.weight(1f)) {
+                Wide("Match") { carSays.replace(',', '.').toFloatOrNull()?.let(actions.matchFuel) }
+            }
+        }
+        val t = state.obd.trip
+        Text(
+            "More accurate: after a drive of a few km, reset the car's short-term average at the start, then type its average here. " +
+                "CarDash's own for this drive: ${t.avgL100?.let { fmt(it.toFloat(), 1) + " L/100" } ?: "not enough distance yet"}.",
+            color = C.muted, fontSize = 14.sp,
+        )
+        var carAvg by remember { mutableStateOf("") }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(
+                value = carAvg,
+                onValueChange = { v -> carAvg = v.filter { it.isDigit() || it == '.' || it == ',' }.take(5) },
+                singleLine = true,
+                placeholder = { Text("8.5", color = C.muted) },
+                textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                modifier = Modifier.width(120.dp),
+            )
+            Text("L/100", color = C.muted, fontSize = 16.sp)
+            Box(Modifier.weight(1f)) {
+                Wide("Match drive") { carAvg.replace(',', '.').toFloatOrNull()?.let(actions.matchFuelAverage) }
+            }
+        }
+        Wide("Undo matching", actions.resetFuel)
+    }
+}
+
+/**
+ * The change up / down signs: on or off, and where they come up, gear by gear. Each point shows the
+ * speed it means in that gear and the revs it lands at in the next, once the gears are learnt.
+ */
+@Composable
+private fun ShiftPointsCard(state: DashState, actions: DashActions) {
+    Card("Change up / down signs") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Show the signs", color = C.ink, fontSize = 17.sp)
+                Text("By the dials, only when it's time to change", color = C.muted, fontSize = 14.sp)
+            }
+            Switch(
+                checked = state.shiftHints,
+                onCheckedChange = actions.setShiftHints,
+                colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink),
+            )
+        }
+        if (state.shiftHints) {
+            Text(
+                "Where they come up, gear by gear. With the pedal past half way, change up waits 500 rpm more; with your foot well down, " +
+                    "change down comes 200 rpm sooner. Nothing while rolling at tickover, and no change down off the pedal.",
+                color = C.muted, fontSize = 14.sp, lineHeight = 20.sp,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Gear", color = C.muted, fontSize = 13.sp, modifier = Modifier.width(56.dp))
+                Text("Change up at", color = C.muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("Change down under", color = C.muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            }
+            for (g in 1..state.gearCount) ShiftPointRow(g, state, actions)
+            if (state.gearRatios.isEmpty()) Text("The speeds show once CarDash has learnt the gears.", color = C.muted, fontSize = 13.sp)
+            Wide("Back to the suggested points") { actions.resetShiftPoints() }
+        }
+    }
+}
+
+@Composable
+private fun ShiftPointRow(g: Int, state: DashState, actions: DashActions) {
+    val n = state.gearCount
+    val r = state.gearRatios
+    val step = Settings.SHIFT_POINT_STEP
+    val up = state.shiftUpAt.getOrElse(g - 1) { 2000 }
+    val down = state.shiftDownAt.getOrElse(g - 1) { 1100 }
+    // The speed an rpm means in this gear, and the rpm it lands at in another
+    fun kmh(rpm: Int) = r.getOrNull(g - 1)?.let { (rpm / it).roundToInt() }
+    fun inGear(k: Int, rpm: Int) = r.getOrNull(k - 1)?.let { other -> r.getOrNull(g - 1)?.let { (rpm * other / it).roundToInt() } }
+    fun note(rpm: Int, k: Int) = listOfNotNull(kmh(rpm)?.let { "$it km/h" }, inGear(k, rpm)?.let { "${ordinal(k)} at ${grouped(it)}" }).joinToString(" · ")
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(ordinal(g), color = C.ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(56.dp))
+        Box(Modifier.weight(1f)) {
+            if (g < n) PointStep("${grouped(up)} rpm", note(up, g + 1), { actions.setShiftUpAt(g, up - step) }, { actions.setShiftUpAt(g, up + step) })
+            else Text("Top gear: none", color = C.muted, fontSize = 15.sp)
+        }
+        Box(Modifier.weight(1f)) {
+            if (g > 1) PointStep("${grouped(down)} rpm", note(down, g - 1), { actions.setShiftDownAt(g, down - step) }, { actions.setShiftDownAt(g, down + step) })
+            else Text("None from 1st", color = C.muted, fontSize = 15.sp)
+        }
+    }
+    // A change up that lands under the next gear's change-down point would bounce back and forth
+    val lands = if (g < n) inGear(g + 1, up) else null
+    val nextDown = state.shiftDownAt.getOrNull(g)
+    if (lands != null && nextDown != null && lands < nextDown) {
+        Text(
+            "Changing up lands at ${grouped(lands)} rpm in ${ordinal(g + 1)}, under its change-down point: the signs would go back and forth.",
+            color = C.red, fontSize = 13.sp, modifier = Modifier.padding(start = 68.dp),
+        )
+    }
+}
+
+/** − value + with what it means underneath. */
+@Composable
+private fun PointStep(value: String, note: String, less: () -> Unit, more: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        RoundIcon(Ic.minus, "Less", less)
+        Column(Modifier.width(132.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(value, color = C.ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            if (note.isNotEmpty()) Text(note, color = C.muted, fontSize = 12.sp, maxLines = 1)
+        }
+        RoundIcon(Ic.plus, "More", more)
+    }
+}
+
+private fun ordinal(g: Int) = g.toString() + when {
+    g % 100 in 11..13 -> "th"
+    g % 10 == 1 -> "st"
+    g % 10 == 2 -> "nd"
+    g % 10 == 3 -> "rd"
+    else -> "th"
+}
+
+private fun grouped(n: Int) = "%,d".format(java.util.Locale.UK, n)
 
 /**
  * Everything the radio's CAN box sends, by code, live. Tapping one assigns it to something on the

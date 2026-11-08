@@ -210,7 +210,7 @@ internal fun Stepper(name: String, value: String, less: () -> Unit, more: () -> 
 }
 
 @Composable
-private fun RoundIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
+internal fun RoundIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
     Box(
         Modifier.size(44.dp).clip(CircleShape).background(C.panelHi).border(1.dp, C.lineHi, CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,

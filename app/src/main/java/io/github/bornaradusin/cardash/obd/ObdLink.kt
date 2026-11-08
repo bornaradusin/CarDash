@@ -234,11 +234,19 @@ class ObdLink(private val context: Context) {
             // Diesel fuel from load and RPM: 4 cylinders, one injection each per 2 turns
             val rpmNow = r.rpm
             val loadNow = r.loadPct
+            // Engine braking: in gear with the foot off, above tickover, a diesel injects nothing at
+            // all (the car's own computer counts 0 then). The pedal says so when the car reports it,
+            // else the load, which on a diesel is the share of the engine's torque and reads 0
+            val pedalNow = r.pedalPct
+            val overrun = diesel && rpmNow != null && rpmNow > OVERRUN_RPM &&
+                (if (pedalNow != null) pedalNow < 1f else (loadNow ?: 100f) < 2f)
             if (diesel && rpmNow != null && loadNow != null) {
-                val mg = (dieselQ0 + dieselQ1 * loadNow).coerceAtLeast(0f)
+                val mg = if (overrun) 0f else (dieselQ0 + dieselQ1 * loadNow).coerceAtLeast(0f)
                 val gPerS = rpmNow / 30f * mg / 1000f
                 r = r.copy(dieselLph = gPerS * 3600f / DIESEL_G_PER_L)
             }
+            // Only the injections that happened count, for matching a drive to the car's figure
+            val firing = if (overrun) 0f else (rpmNow ?: 0f)
             val trip = _state.value.trip.let { t ->
                 if (!answered || kmh == null) t else t.copy(
                     meters = t.meters + kmh / 3.6 * dt / 1000.0,
@@ -247,8 +255,8 @@ class ObdLink(private val context: Context) {
                     fuelL = t.fuelL + (r.fuelLph ?: 0f) * dt / 3_600_000.0,
                     maxBoostBar = maxOf(t.maxBoostBar, r.boostBar ?: 0f),
                     maxRpm = maxOf(t.maxRpm, r.rpm ?: 0f),
-                    injections = t.injections + (rpmNow ?: 0f) / 30.0 * dt / 1_000_000.0,
-                    injectionsLoad = t.injectionsLoad + (rpmNow ?: 0f) / 30.0 * (loadNow ?: 0f) * dt / 1_000_000.0,
+                    injections = t.injections + firing / 30.0 * dt / 1_000_000.0,
+                    injectionsLoad = t.injectionsLoad + firing / 30.0 * (loadNow ?: 0f) * dt / 1_000_000.0,
                 )
             }
             val rate = if (now - since >= 2_000) {
@@ -358,6 +366,8 @@ class ObdLink(private val context: Context) {
         const val DIESEL_Q0 = -9.8f
         const val DIESEL_Q1 = 0.668f
         /** Grams in a litre of diesel. */
+        /** Over this with the foot off, a diesel in gear is on overrun: no fuel. Under it, it idles. */
+        const val OVERRUN_RPM = 1250f
         const val DIESEL_G_PER_L = 832f
 
         /** Not a PID: the dongle's own voltage reading (ATRV). */

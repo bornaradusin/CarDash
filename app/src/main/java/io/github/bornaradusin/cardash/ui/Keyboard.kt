@@ -205,9 +205,10 @@ fun CarKeyboard(modifier: Modifier = Modifier) {
         }
     }
 
-    // Right across the screen, edge to edge, so the keys are as wide as they can be
+    // Right across the screen, the keys as wide as they can be, but kept about 3 mm in from the
+    // screen's edges, where a finger beside the bezel misses
     Box(
-        modifier.background(Color(0xFF0B0D12)).padding(horizontal = 6.dp, vertical = 8.dp),
+        modifier.background(Color(0xFF0B0D12)).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (numbers) {

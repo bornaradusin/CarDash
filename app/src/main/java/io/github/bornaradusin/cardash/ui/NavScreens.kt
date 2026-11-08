@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -65,9 +66,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import io.github.bornaradusin.cardash.car.NavInfo
+import io.github.bornaradusin.cardash.nav.Countries
+import io.github.bornaradusin.cardash.nav.Country
 import io.github.bornaradusin.cardash.nav.Geo
 import io.github.bornaradusin.cardash.nav.MapArea
 import io.github.bornaradusin.cardash.nav.NavState
+import io.github.bornaradusin.cardash.nav.OfflineMaps
 import io.github.bornaradusin.cardash.nav.Place
 import io.github.bornaradusin.cardash.nav.Places
 import io.github.bornaradusin.cardash.nav.Route
@@ -800,11 +804,33 @@ internal fun OfflineMapCard(state: DashState, actions: DashActions) {
         val old = state.mapAreas.filter { io.github.bornaradusin.cardash.nav.OfflineMaps.stale(it) }
         if (old.size > 1) Wide("Update all ${old.size} out-of-date areas") { old.forEach { actions.updateMap(it.id) } }
         Text("Save another area", color = C.muted, fontSize = 14.sp)
+        // Each one shows its size first, and the room left, before anything downloads
+        var picking by remember { mutableStateOf(false) }
+        var plan by remember { mutableStateOf<MapPlan?>(null) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) { Wide("Around here") { actions.saveMapAround() } }
-            Box(Modifier.weight(1f)) { Wide("All of Ireland") { actions.saveMapIreland() } }
-            Box(Modifier.weight(1f)) { Wide("Along a route") { actions.saveMapRoute() } }
+            Box(Modifier.weight(1f)) {
+                Wide("Around here") {
+                    state.nav.here?.let { here ->
+                        val tiles = OfflineMaps.tilesAround(here, 50.0)
+                        plan = MapPlan("Around here, 50 km", tiles, "all the roads within 50 km") { actions.saveMapAround() }
+                    }
+                }
+            }
+            Box(Modifier.weight(1f)) { Wide("A country") { picking = true } }
+            Box(Modifier.weight(1f)) {
+                Wide("Along a route") {
+                    state.nav.route?.let { r ->
+                        val tiles = OfflineMaps.tilesAlong(r)
+                        plan = MapPlan("Route to ${state.nav.destination?.name ?: "destination"}", tiles, "the roads along the route you're on") { actions.saveMapRoute() }
+                    }
+                }
+            }
         }
+        if (picking) CountryDialog(state, onPick = { c ->
+            picking = false
+            plan = MapPlan(c.name, c.tiles, "the whole country, street by street") { actions.saveMapCountry(c) }
+        }, onDismiss = { picking = false }, freeMb = actions.freeMapMb)
+        plan?.let { p -> SaveMapDialog(p, actions.freeMapMb(), state.wifiOnly, onDismiss = { plan = null }) }
         if (state.nav.here == null) Text("Around here needs a GPS position first.", color = C.muted, fontSize = 13.sp)
         if (state.nav.route == null) Text("Along a route saves the route you're on.", color = C.muted, fontSize = 13.sp)
         SwitchRow("Download on Wi-Fi only", "Waits for Wi-Fi (a phone's hotspot counts) instead of the radio's mobile data", state.wifiOnly, actions.setWifiOnly)
@@ -825,6 +851,117 @@ internal fun OfflineMapCard(state: DashState, actions: DashActions) {
             Box(Modifier.weight(1f)) { Wide("Load saved areas") { load.launch(arrayOf("*/*")) } }
         }
         said?.let { Text(it, color = C.ink2, fontSize = 14.sp) }
+    }
+}
+
+/** A download about to start: what it is and roughly how big. */
+private class MapPlan(val name: String, val tiles: Long, val what: String, val start: () -> Unit) {
+    val mb = OfflineMaps.mbFor(tiles)
+}
+
+/** Every country, the ones near the car first, each with its rough size; search with CarDash's keyboard. */
+@Composable
+private fun CountryDialog(state: DashState, onPick: (Country) -> Unit, onDismiss: () -> Unit, freeMb: () -> Long) {
+    val context = LocalContext.current
+    var all by remember { mutableStateOf<List<Country>>(emptyList()) }
+    LaunchedEffect(Unit) { all = runCatching { Countries.all(context) }.getOrDefault(emptyList()) }
+    var query by remember { mutableStateOf("") }
+    val free = remember { freeMb() }
+    val near = remember(all) { Countries.nearby(all, state.nav.here) }
+    val saved = state.mapAreas.map { it.name }.toSet()
+    val found = remember(all, query) { all.filter { it.matches(query) } }
+    val focus = LocalFocusManager.current
+    KeyboardDialog(onDismissRequest = onDismiss) {
+        Column(Modifier.width(900.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)) {
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Download a country", color = C.ink, fontSize = 24.sp, modifier = Modifier.weight(1f))
+                    if (free != Long.MAX_VALUE) Text("${Countries.size(free).removePrefix("about ")} free on the radio", color = C.ink2, fontSize = 15.sp)
+                }
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it.take(40) },
+                    singleLine = true,
+                    placeholder = { Text("Search: Ireland, France, Scotland…", color = C.muted) },
+                    textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.red, unfocusedBorderColor = C.lineHi, cursorColor = C.red),
+                    // Search puts the keyboard away so the whole list shows
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (query.isBlank() && near.isNotEmpty()) {
+                        item { Text("Near you", color = C.muted, fontSize = 14.sp) }
+                        items(near, key = { "near-" + it.name }) { c -> CountryRow(c, c.name in saved) { onPick(c) } }
+                        item { Text("All countries", color = C.muted, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp)) }
+                    }
+                    items(found, key = { it.name }) { c -> CountryRow(c, c.name in saved) { onPick(c) } }
+                    if (all.isNotEmpty() && found.isEmpty()) item { Text("No country called that.", color = C.muted, fontSize = 15.sp) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Sizes are rough: cities take more room than countryside.", color = C.muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CountryRow(c: Country, saved: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier.fillMaxWidth().clip(shape).background(C.panel).border(1.dp, C.line, shape).clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(c.name, color = C.ink, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        if (saved) Text("Saved", color = C.good, fontSize = 14.sp)
+        Text(Countries.size(c.mb), color = if (c.mb > 10_000) C.red else C.ink2, fontSize = 15.sp)
+    }
+}
+
+/** What the download will take, before it starts: size, tiles, a rough time, and the room left. */
+@Composable
+private fun SaveMapDialog(plan: MapPlan, freeMb: Long, wifiOnly: Boolean, onDismiss: () -> Unit) {
+    val roomy = freeMb == Long.MAX_VALUE || plan.mb * 11 / 10 <= freeMb
+    // The radio fetches about 30 tiles a second on good Wi-Fi
+    val minutes = plan.tiles / 30 / 60
+    val time = when {
+        minutes < 2 -> "a minute or two"
+        minutes < 60 -> "about ${(minutes + 4) / 5 * 5} minutes"
+        minutes < 48 * 60 -> "about ${(minutes + 30) / 60} hour${if ((minutes + 30) / 60 == 1L) "" else "s"}"
+        else -> "about ${(minutes + 720) / 1440} days"
+    }
+    KeyboardDialog(onDismissRequest = onDismiss) {
+        Column(Modifier.width(660.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)) {
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Download ${plan.name}?", color = C.ink, fontSize = 24.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(Countries.size(plan.mb), color = C.ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+                Text("${"%,d".format(java.util.Locale.UK, plan.tiles)} map tiles: ${plan.what}", color = C.ink2, fontSize = 15.sp)
+                Text("Takes $time on good Wi-Fi${if (wifiOnly) "; it waits while there's no Wi-Fi" else ""}. You can pause it and carry on later.", color = C.ink2, fontSize = 15.sp, lineHeight = 21.sp)
+                if (freeMb != Long.MAX_VALUE) {
+                    Text(
+                        if (roomy) "${Countries.size(freeMb).removePrefix("about ")} free on the radio."
+                        else "Not enough room: it needs ${Countries.size(plan.mb).removePrefix("about ")} and the radio has ${Countries.size(freeMb).removePrefix("about ")} free.",
+                        color = if (roomy) C.muted else C.red, fontSize = 15.sp,
+                    )
+                }
+                if (plan.mb > 10_000) Text(
+                    "That's very big for a car radio. A part may do (England, Scotland, Alaska…), or download it on a phone and load the file here.",
+                    color = C.red, fontSize = 15.sp, lineHeight = 21.sp,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2) }
+                    TextButton(enabled = roomy, onClick = { plan.start(); onDismiss() }) {
+                        Text("Download", color = if (roomy) C.red else C.muted, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
 

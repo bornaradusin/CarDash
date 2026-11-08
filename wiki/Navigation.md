@@ -73,8 +73,14 @@ Navigating in the Google Maps app instead? Its next turn fills the middle box's 
 ![Settings: the offline map card](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/offline-map.gif)
 
 - **Around here**: everything within 50 km (needs a GPS position).
-- **All of Ireland**: the whole island, down to street level. A big download.
+- **A country**: any country, down to street level. The list puts the one you're in and the nearest ones first (Ireland, Ireland and Northern Ireland, Northern Ireland, Wales…), then every country A to Z; search it with CarDash's keyboard. Each one downloads just its own outline (with a little over the border and along the coast), not a box round it, so the neighbours don't come with it. The UK is there whole and as England, Scotland, Wales and Northern Ireland; the United States as the lower 48, Alaska and Hawaii.
 - **Along a route**: the roads along the route you're on.
+
+**The size first**: every list entry shows roughly how big it is, and before anything downloads CarDash shows the size, the number of map tiles, roughly how long it takes on good Wi-Fi, and how much room the radio has left. If there isn't room, **Download** stays off. Sizes are estimates: towns and cities take more room than countryside. Some rough figures: Ireland about 860 MB, Ireland and Northern Ireland about 1 GB, England about 1.5 GB, Germany about 3.7 GB, France about 4.7 GB.
+
+![Download a country: every country with its rough size, the ones near you first](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/country-pick.gif)
+
+![Before it downloads: the size, the time and the room left](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/map-size.gif)
 
 **Quicker for a big area**: the radio fetches every map tile itself, which is slow over a phone's hotspot. Download the area with CarDash on your phone instead, tap **Copy saved areas to a file**, put that file on a USB stick, and on the radio tap **Load saved areas** and pick it. Both need the same CarDash version. An area that didn't finish carries on where it stopped the next time CarDash starts, unless you paused it: what was downloaded is kept. **Download on Wi-Fi only** waits for Wi-Fi instead of using the radio's own mobile data; a phone's hotspot counts as Wi-Fi. If a download says the radio doesn't let CarDash use the internet, allow CarDash's network access in the radio's own settings (Apps › CarDash) and turn off any data saver for it. If it says Android didn't give CarDash its internet permission, uninstall CarDash and install it again: a radio updated from CarDash 1.0.1–1.0.8, which didn't ask for it, may not get it back. A saved area shows its date and size; **Update** fetches it again for map changes (only the tiles that changed). An area saved more than 60 days ago shows as out of date and updates by itself the next time the radio is on Wi-Fi (a phone's hotspot counts, the radio's own mobile data doesn't); with more than one, **Update all** does them all, **Remove** deletes it. A download can be paused and resumed.
 
