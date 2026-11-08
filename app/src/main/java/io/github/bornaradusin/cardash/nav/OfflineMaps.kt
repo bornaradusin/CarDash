@@ -43,6 +43,13 @@ data class MapArea(
  */
 class OfflineMaps(private val context: Context, private val wifiOnly: () -> Boolean) {
     private val manager by lazy { OfflineManager.getInstance(context) }
+    /** The areas the person paused, kept between starts: every other unfinished area carries on where
+     * it stopped (MapLibre keeps what it fetched), when CarDash starts again. */
+    private val prefs = context.getSharedPreferences("offline_maps", Context.MODE_PRIVATE)
+    private val paused: MutableSet<Long> =
+        prefs.getStringSet("paused", emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toMutableSet()
+
+    private fun savePaused() = prefs.edit().putStringSet("paused", paused.map { it.toString() }.toSet()).apply()
     private val regions = HashMap<Long, OfflineRegion>()
     /** Areas the person wants downloading (as opposed to paused). */
     private val wanted = HashSet<Long>()
@@ -152,7 +159,13 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         })
         r.getStatus(object : OfflineRegion.OfflineRegionStatusCallback {
             override fun onStatus(status: OfflineRegionStatus?) {
-                status?.let { show(r.id, it) }
+                status ?: return
+                // Unfinished from last time and not paused: it carries on
+                if (!startNow && !status.isComplete && r.id !in paused && r.id !in wanted) {
+                    wanted += r.id
+                    r.setDownloadState(if (mayDownload()) OfflineRegion.STATE_ACTIVE else OfflineRegion.STATE_INACTIVE)
+                }
+                show(r.id, status)
             }
             override fun onError(error: String?) = Unit
         })
@@ -187,12 +200,15 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
 
     fun pause(id: Long) {
         wanted -= id
+        paused += id
+        savePaused()
         regions[id]?.setDownloadState(OfflineRegion.STATE_INACTIVE)
         _areas.update { list -> list.map { if (it.id == id) it.copy(active = false, waitingForWifi = false) else it } }
     }
 
     fun resume(id: Long) {
         wanted += id
+        if (paused.remove(id)) savePaused()
         applyNetwork()
     }
 
@@ -222,6 +238,7 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         r.delete(object : OfflineRegion.OfflineRegionDeleteCallback {
             override fun onDelete() {
                 regions -= id
+                if (paused.remove(id)) savePaused()
                 _areas.update { list -> list.filterNot { it.id == id } }
             }
             override fun onError(error: String) = Unit
