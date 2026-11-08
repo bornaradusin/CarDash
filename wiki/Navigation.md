@@ -76,7 +76,7 @@ Navigating in the Google Maps app instead? Its next turn fills the middle box's 
 - **All of Ireland**: the whole island, down to street level. A big download.
 - **Along a route**: the roads along the route you're on.
 
-**Download on Wi-Fi only** waits for Wi-Fi instead of using mobile data. A saved area shows its date and size; **Update** fetches it again for map changes, **Remove** deletes it. A download can be paused and resumed.
+**Download on Wi-Fi only** waits for Wi-Fi instead of using the radio's own mobile data; a phone's hotspot counts as Wi-Fi. If a download says the radio doesn't let CarDash use the internet, allow CarDash's network access in the radio's own settings (Apps › CarDash) and turn off any data saver for it. A saved area shows its date and size; **Update** fetches it again for map changes, **Remove** deletes it. A download can be paused and resumed.
 
 Searching and planning a new route still need the internet; a route you've already started keeps going without it.
 

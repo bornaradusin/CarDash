@@ -36,7 +36,8 @@ data class MapArea(
 
 /**
  * Map areas kept on the radio for driving without signal, through MapLibre's offline database. With
- * "Wi-Fi only", downloads wait while the radio is on mobile data.
+ * "Wi-Fi only", downloads wait while the radio is on its own mobile data. A phone's hotspot counts as
+ * Wi-Fi: the radio joins it over Wi-Fi, though Android marks it metered.
  */
 class OfflineMaps(private val context: Context, private val wifiOnly: () -> Boolean) {
     private val manager by lazy { OfflineManager.getInstance(context) }
@@ -56,7 +57,7 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         runCatching {
             cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                    val now = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+                    val now = wifiOrWired(caps)
                     if (now != onWifi) { onWifi = now; applyNetwork() }
                 }
                 override fun onLost(network: Network) {
@@ -69,7 +70,11 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
     }
 
     private fun unmetered(cm: ConnectivityManager): Boolean =
-        cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) ?: false
+        cm.getNetworkCapabilities(cm.activeNetwork)?.let(::wifiOrWired) ?: false
+
+    /** Wi-Fi (a phone's hotspot included) or a cable, not the radio's own SIM. */
+    private fun wifiOrWired(caps: NetworkCapabilities): Boolean =
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
 
     private fun mayDownload() = !wifiOnly() || onWifi
 
@@ -133,7 +138,8 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
         r.setObserver(object : OfflineRegion.OfflineRegionObserver {
             override fun onStatusChanged(status: OfflineRegionStatus) = show(r.id, status)
             override fun onError(error: OfflineRegionError) {
-                _areas.update { list -> list.map { if (it.id == r.id) it.copy(error = error.message) else it } }
+                val why = problem(error.message)
+                _areas.update { list -> list.map { if (it.id == r.id) it.copy(error = why) else it } }
             }
             override fun mapboxTileCountLimitExceeded(limit: Long) = Unit
         })
@@ -210,6 +216,18 @@ class OfflineMaps(private val context: Context, private val wifiOnly: () -> Bool
     }
 
     companion object {
+        /**
+         * What a download error means for the person. EPERM: Android refused CarDash a connection at all,
+         * which is the radio's per-app network setting or a data saver, not the map's server.
+         */
+        fun problem(message: String?): String = when {
+            message == null -> "the download failed"
+            message.contains("EPERM") || message.contains("Operation not permitted") ->
+                "the radio doesn't let CarDash use the internet. Allow it in the radio's settings (Apps › CarDash: " +
+                    "network, Wi-Fi or mobile data) and turn off any data saver for it"
+            else -> message
+        }
+
         /** OpenFreeMap's dark map: free, no key. */
         const val STYLE = "https://tiles.openfreemap.org/styles/dark"
         private const val MAX_ZOOM = 14.0

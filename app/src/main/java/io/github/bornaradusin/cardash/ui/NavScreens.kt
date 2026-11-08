@@ -803,7 +803,7 @@ internal fun OfflineMapCard(state: DashState, actions: DashActions) {
         }
         if (state.nav.here == null) Text("Around here needs a GPS position first.", color = C.muted, fontSize = 13.sp)
         if (state.nav.route == null) Text("Along a route saves the route you're on.", color = C.muted, fontSize = 13.sp)
-        SwitchRow("Download on Wi-Fi only", "Waits for Wi-Fi instead of using mobile data", state.wifiOnly, actions.setWifiOnly)
+        SwitchRow("Download on Wi-Fi only", "Waits for Wi-Fi (a phone's hotspot counts) instead of the radio's mobile data", state.wifiOnly, actions.setWifiOnly)
     }
 }
 
