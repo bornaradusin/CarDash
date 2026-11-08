@@ -21,7 +21,7 @@ The page CarDash opens on, and the one the radio's Home button brings you back t
 
 ## The four small gauges
 
-Under the middle box: oil temperature (the engine icon), boost (the turbo), intake air (the intake manifold) and battery voltage. Until the radio's CAN box gives the oil temperature, the first one shows engine load (in %, with the same engine icon). A gauge and its icon turn red past the warning level: oil over 120 °C, intake air over 55 °C, battery under 11.8 V.
+Under the middle box: oil temperature (the oil can, as on the car's dash), boost (the turbo), intake air (the intake manifold) and battery voltage. Until the radio's CAN box gives the oil temperature, the first one shows engine load (in %, with the engine icon). A gauge and its icon turn red past the warning level: oil over 120 °C, intake air over 55 °C, battery under 11.8 V.
 
 ## The box in the middle
 

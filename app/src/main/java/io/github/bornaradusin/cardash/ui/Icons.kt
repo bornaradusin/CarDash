@@ -42,7 +42,9 @@ object Ic {
     val previous = icon("previous", "M19 20L9 12l10-8z", "M5 19V5")
     val external = icon("external", "M7 17L17 7", "M9 7h8v8", width = 2.4f)
     val turn = icon("turn", "M7 20V11a3 3 0 0 1 3-3h9", "M15 4l4 4-4 4", width = 2.4f)
-    val oil = icon("oil", "M3 10h4l2-2h5l7 3-5 6H6l-3-3z", "M20 15c0 1 .7 2 1 2")
+    // The oil can from the car's dash: the can with its handle and cap, the spout, and a drop
+    val oil = icon("oil", "M6 10.5h9l6.5-3-5.5 8.5H6z", "M6 11.5H3.5v3H6", "M10.5 10.5V8.5", "M8.5 8.5h4",
+        "M21.5 12.5c-.6.9-1 1.5-1 2a1 1 0 0 0 2 0c0-.5-.4-1.1-1-2z")
     // A turbo: the snail housing with its outlet, and the compressor wheel inside
     val boost = icon("boost", "M16.6 9.6H21V5H10A7 7 0 1 0 16.6 9.6",
         "M10 12c0-1.6.8-2.4 2-2.6", "M10 12c1.39.8 1.68 1.89 1.25 3.03", "M10 12c-1.39.8-2.48.51-3.25-.43")

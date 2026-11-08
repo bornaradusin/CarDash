@@ -851,7 +851,7 @@ private fun Modifier.leftSwipe(zone: Dp, onSwipe: () -> Unit): Modifier = pointe
 @Composable
 private fun SmallGauges(r: Readings) {
     // Oil once the radio's CAN box is read; until then, engine load. The engine icon either way
-    if (r.oilC != null) RoundGauge(Ic.engine, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 120f, diameter = GAUGE)
+    if (r.oilC != null) RoundGauge(Ic.oil, "Oil", r.oilC, 40f, 150f, "${r.oilC.toInt()}", "°C", warnAbove = 120f, diameter = GAUGE)
     else RoundGauge(Ic.engine, "Engine load", r.loadPct, 0f, 100f, r.loadPct?.let { "${it.toInt()}" }, "%", diameter = GAUGE)
     RoundGauge(Ic.boost, "Boost", r.boostBar, 0f, 1.5f, r.boostBar?.let { fmt(it, 1) }, "bar", diameter = GAUGE)
     RoundGauge(Ic.intake, "Intake air", r.intakeC, 0f, 70f, r.intakeC?.let { "${it.toInt()}" }, "°C", warnAbove = 55f, diameter = GAUGE)
