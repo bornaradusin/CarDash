@@ -160,6 +160,8 @@ data class DashState(
     val homePresses: Int,
     /** A shared place that couldn't be found on its own: Where to? opens with these words. */
     val searchFor: String? = null,
+    /** Goes up each time a shared place's route starts. */
+    val sharedRoutes: Int = 0,
     /** The engine runs on diesel: fuel use is worked out from load and RPM, not air flow. */
     val diesel: Boolean,
     val can: CanState,
@@ -362,6 +364,16 @@ fun CarDash(state: DashState, actions: DashActions) {
         if (routing && centre.currentPage == VIEW_CAR) centre.animateScrollToPage(VIEW_MAP)
     }
     var searchText by remember { mutableStateOf("") }
+    // A shared place's route has started: off Where to? (or Settings) to the main dash, the map in the middle box
+    LaunchedEffect(state.sharedRoutes) {
+        if (state.sharedRoutes == 0) return@LaunchedEffect
+        settings = false
+        whereTo = false
+        mapDash = false
+        if (pager.currentPage != PAGE_HOME) pager.scrollToPage(PAGE_HOME)
+        shownView = VIEW_MAP
+        viewsNow.indexOf(VIEW_MAP).takeIf { it >= 0 && centre.currentPage != it }?.let { centre.scrollToPage(it) }
+    }
     val openSearch = { settings = false; searchText = ""; whereTo = true }
     // A shared place to pick from: Where to? with its name and address typed in
     LaunchedEffect(state.searchFor) {

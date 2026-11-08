@@ -48,6 +48,8 @@ class MainActivity : ComponentActivity() {
     /** Bumped on resume, so permissions and installed apps are checked again after a trip to Settings. */
     private var resumes by mutableIntStateOf(0)
     private var homePresses by mutableIntStateOf(0)
+    /** Goes up each time a shared place's route starts: back to the main dash, map in the middle. */
+    private var sharedRoutes by mutableIntStateOf(0)
     /** A shared place that couldn't be found on its own: its name and address, for Where to? */
     private var searchFor by mutableStateOf<String?>(null)
     /** Asked once per start, so the map doesn't keep asking after a no. */
@@ -272,6 +274,7 @@ class MainActivity : ComponentActivity() {
                 isHomeApp = remember(resumes) { isHomeApp() },
                 fullScreen = fullScreen,
                 homePresses = homePresses,
+                sharedRoutes = sharedRoutes,
                 searchFor = searchFor,
                 diesel = diesel,
                 can = can,
@@ -387,6 +390,7 @@ class MainActivity : ComponentActivity() {
             val route = app.nav.preview(place.pos)
             app.places.used(place)
             app.nav.go(place, route)
+            sharedRoutes++
             Toast.makeText(this@MainActivity, "Route to ${place.name}", Toast.LENGTH_SHORT).show()
         }
     }
