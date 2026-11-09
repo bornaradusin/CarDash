@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
@@ -486,15 +487,36 @@ private fun ServiceRow(st: ServiceStatus, odometerKnown: Boolean, onClick: () ->
                 color = if (due) C.red else if (st.urgency == Urgency.UNSET) C.muted else C.ink,
                 fontSize = 22.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic, maxLines = 1,
             )
-            Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.track)) {
-                if (st.urgency != Urgency.UNSET) {
-                    Box(Modifier.fillMaxWidth(st.used.coerceIn(0f, 1f)).fillMaxHeight().background(if (due) C.red else C.good))
-                }
-            }
+            HealthBar(st)
             Text(nextText(st), color = C.muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
+
+/**
+ * What's left of an item's interval as a game's health bar: a row of squares, all lit just after it's
+ * done, going out one by one down to none when it's due. Green, amber under half, red once it's due
+ * soon; overdue, the empty squares are red too.
+ */
+@Composable
+private fun HealthBar(st: ServiceStatus) {
+    val unset = st.urgency == Urgency.UNSET
+    val left = if (unset) 0f else (1f - st.used).coerceIn(0f, 1f)
+    val lit = if (unset) 0 else kotlin.math.ceil(left * SQUARES).toInt()
+    val on = when {
+        st.due -> C.red
+        left > 0.5f -> C.good
+        else -> Color(0xFFFFB020)
+    }
+    val off = if (st.urgency == Urgency.OVERDUE) C.redDeep else C.track
+    Row(Modifier.fillMaxWidth().height(12.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        repeat(SQUARES) { i ->
+            Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(if (i < lit) on else off))
+        }
+    }
+}
+
+private const val SQUARES = 20
 
 @Composable
 private fun Pill(text: String, solid: Boolean) {

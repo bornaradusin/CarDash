@@ -30,7 +30,7 @@ These are only starting points: set them to what your car's service book says.
 Each item shows:
 
 - **How far off it is**: *8,284 km left*, *5 months left* or *36 days overdue*, whichever of km or time comes first
-- **A bar** of how much of the interval has gone, green until it gets close, then red
+- **A health bar** of squares, like in a game: all lit just after it's done, going out one by one down to none when it's due. Green, amber once under half is left, red when it's due soon; overdue, the empty squares are red
 - **When it's next due**: *Next at 192,500 km · or by Aug 2027*
 
 The most urgent items are at the top. Items not set up yet say *Not set yet* and sit at the bottom.

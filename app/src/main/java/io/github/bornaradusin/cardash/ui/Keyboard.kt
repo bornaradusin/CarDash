@@ -46,6 +46,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -212,12 +215,27 @@ fun CarKeyboard(modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         if (numbers) {
-            // One row across: big keys, and it leaves the box being typed in plenty of room above
-            KeyRow {
-                "1234567890".forEach { c -> Key(c.toString(), Modifier.weight(1f)) { type(c.toString()) } }
-                if (decimal) Key(".", Modifier.weight(1f)) { type(".") }
-                Key(null, Modifier.weight(1.5f), icon = Ic.backspace, look = KeyLook.Special, repeat = true) { backspace() }
-                Key(actionLabel, Modifier.weight(2f), look = KeyLook.Action) { act() }
+            // A phone's number pad: 1 to 9 in threes, 0 underneath, big keys in the middle of the
+            // screen; backspace and Done down the right
+            val gap = 8.dp
+            val tall = 56.dp
+            Row(Modifier.widthIn(max = 680.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                Column(Modifier.weight(3f), verticalArrangement = Arrangement.spacedBy(gap)) {
+                    listOf("123", "456", "789").forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                            row.forEach { c -> Key(c.toString(), Modifier.weight(1f), height = tall) { type(c.toString()) } }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        if (decimal) Key(".", Modifier.weight(1f), height = tall) { type(".") } else Spacer(Modifier.weight(1f))
+                        Key("0", Modifier.weight(1f), height = tall) { type("0") }
+                        Key("Paste", Modifier.weight(1f), look = KeyLook.Special, small = true, height = tall) { paste() }
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(gap)) {
+                    Key(null, Modifier.fillMaxWidth(), icon = Ic.backspace, look = KeyLook.Special, repeat = true, height = tall) { backspace() }
+                    Key(actionLabel, Modifier.fillMaxWidth(), look = KeyLook.Action, height = tall * 3 + gap * 2) { act() }
+                }
             }
         } else {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -273,6 +291,7 @@ private fun Key(
     look: KeyLook = KeyLook.Plain,
     small: Boolean = false,
     repeat: Boolean = false,
+    height: Dp = 50.dp,
     onTap: () -> Unit,
 ) {
     var down by remember { mutableStateOf(false) }
@@ -288,7 +307,7 @@ private fun Key(
     }
     Box(
         modifier
-            .height(50.dp)
+            .height(height)
             .clip(shape)
             .background(fill)
             .then(
