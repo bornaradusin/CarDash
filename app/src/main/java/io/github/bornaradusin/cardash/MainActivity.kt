@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private var askedLocation = false
     /** The wait-for-Wi-Fi callback that presses Play once on start-up; unregistered once it fires. */
     private var wifiCallback: android.net.ConnectivityManager.NetworkCallback? = null
+    private val autoPlayHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val locationRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { app.nav.start() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -402,7 +403,10 @@ class MainActivity : ComponentActivity() {
             if (done.getAndSet(true)) return
             wifiCallback?.let { cb -> runCatching { cm.unregisterNetworkCallback(cb) } }
             wifiCallback = null
-            if (media.now.value?.playing != true) media.playPause(musicApp())
+            // Give the music app ten seconds to settle after Wi-Fi, then press Play
+            autoPlayHandler.postDelayed({
+                if (media.now.value?.playing != true) media.playPause(musicApp())
+            }, 10_000)
         }
         val active = cm.getNetworkCapabilities(cm.activeNetwork)
         if (active?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true) {
@@ -422,6 +426,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         media.stop()
+        autoPlayHandler.removeCallbacksAndMessages(null)
         wifiCallback?.let { cb -> runCatching { getSystemService(android.net.ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } }
         shareScope.cancel()
         super.onDestroy()
