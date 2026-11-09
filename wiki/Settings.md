@@ -53,6 +53,16 @@ The suggested points follow **Diesel engine** in **Settings › Car › Fuel use
 
 If any of these is missing when the radio starts (an update or the radio can take them away), CarDash shows a popup listing them, each with its **Allow** button. It closes by itself once they're all allowed; **Not now** hides it until the radio starts again.
 
+## Service
+
+| Card | What's there |
+|---|---|
+| Car's odometer | Where the km come from (the CAN box, or counted on from the OBD speed); without the CAN box, type what the dashboard shows |
+| Remind me | How early the service reminder comes: 250 to 5,000 km, or 5 to 90 days |
+| Items | Every item, with how often (tap the name or pencil to change it, and its icon), **Done** (at the odometer now and today, or the km and day it was really done) and **×** to remove it. **Add an item** opens a list of parts that need changing now and then (timing belt, gearbox oil, Haldex oil, coolant, brake pads and discs, tyres, wiper blades, battery, glow plugs, air con, the NCT…), or **Something else** with your own name and icon. **Put back the suggested items** brings back any you removed |
+
+The [Service](Service) page itself is for looking: tap **Change** or any item there to come here.
+
 ## Updates
 
 | Card | What's there |

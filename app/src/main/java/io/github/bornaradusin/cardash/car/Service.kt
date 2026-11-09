@@ -11,7 +11,11 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** What an item is: the usual ones start with their usual interval; CUSTOM is one the person added. */
+/**
+ * What an item is: the usual ones start with their usual interval (a starting point: the car's own
+ * service book wins); CUSTOM is one the person named. The first six are the suggested items; the rest
+ * can be added from the list in Settings › Service.
+ */
 enum class ServiceKind(val title: String, val everyKm: Int?, val everyMonths: Int?) {
     OIL("Engine oil", 15_000, 12),
     AIR_FILTER("Air filter", 30_000, 24),
@@ -19,6 +23,19 @@ enum class ServiceKind(val title: String, val everyKm: Int?, val everyMonths: In
     SPARK_PLUGS("Spark plugs", 60_000, 48),
     FUEL_FILTER("Fuel filter", 60_000, 48),
     BRAKE_FLUID("Brake fluid", null, 24),
+    TIMING_BELT("Timing belt", 120_000, 60),
+    AUX_BELT("Auxiliary belt", 120_000, 60),
+    GEARBOX_OIL("Gearbox oil", 120_000, null),
+    HALDEX("Haldex oil and filter", 60_000, 36),
+    COOLANT("Coolant", null, 60),
+    BRAKE_PADS("Brake pads", 40_000, null),
+    BRAKE_DISCS("Brake discs", 80_000, null),
+    TYRES("Tyres", 40_000, 60),
+    WIPERS("Wiper blades", null, 12),
+    BATTERY("Battery", null, 60),
+    GLOW_PLUGS("Glow plugs", 100_000, null),
+    AIRCON("Air con service", null, 24),
+    NCT("NCT", null, 24),
     CUSTOM("", null, null),
 }
 
@@ -35,6 +52,8 @@ data class ServiceItem(
     val lastKm: Int?,
     /** The day it was last done, as LocalDate.toEpochDay(). */
     val lastDay: Long?,
+    /** The icon picked for it (a kind's name), when not its own kind's. */
+    val icon: String? = null,
 ) {
     val lastDate: LocalDate? get() = lastDay?.let(LocalDate::ofEpochDay)
 }
@@ -156,6 +175,15 @@ class ServiceBook(context: Context, diesel: Boolean) {
         saveItems()
     }
 
+    /** The suggested items that were removed, put back (not set up), for the kind of engine. */
+    fun restoreDefaults(diesel: Boolean) {
+        _state.update { s ->
+            val have = s.items.map { it.kind }.toSet()
+            s.copy(items = s.items + defaults(diesel).filter { it.kind !in have })
+        }
+        saveItems()
+    }
+
     /** Done today, at the odometer now. */
     fun done(id: String) {
         val km = _state.value.carKm?.roundToInt()
@@ -272,6 +300,7 @@ class ServiceBook(context: Context, diesel: Boolean) {
                     i.everyMonths?.let { put("everyMonths", it) }
                     i.lastKm?.let { put("lastKm", it) }
                     i.lastDay?.let { put("lastDay", it) }
+                    i.icon?.let { put("icon", it) }
                 })
             }
         }.toString()
@@ -289,6 +318,7 @@ class ServiceBook(context: Context, diesel: Boolean) {
                     everyMonths = int("everyMonths"),
                     lastKm = int("lastKm"),
                     lastDay = if (o.has("lastDay")) o.getLong("lastDay") else null,
+                    icon = o.optString("icon").ifEmpty { null },
                 )
             }
         }.getOrNull()

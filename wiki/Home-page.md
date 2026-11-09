@@ -8,7 +8,7 @@ The page CarDash opens on, and the one the radio's Home button brings you back t
 - **Time, date** and the page dots, side by side.
 - **2 due** (only while something needs servicing): tap it for the [Service](Service) page.
 - **OBD**: green while the car is answering.
-- **Outside temperature**, when the car reports it.
+- **The weather** where you are (sun, cloud, rain, snow, fog or thunder; the moon on a clear night), from [Open-Meteo](https://open-meteo.com), looked up every 20 minutes once there's a GPS position, and the **outside temperature**, when the car reports it.
 - **The cog**: [Settings](Settings).
 
 ## The dials

@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -33,6 +34,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
@@ -69,45 +72,114 @@ import kotlin.math.roundToInt
 
 // ---------- the Service page ----------
 
-/** The car's odometer, the reminder settings and every item, most urgent first. */
+/**
+ * The car's odometer and every item, most urgent first: how far off each is. Looking only: tap
+ * anything (or Change) to set them up in Settings › Service.
+ */
 @Composable
-internal fun ServicePage(s: ServiceState, actions: DashActions) {
-    var editing by remember { mutableStateOf<ServiceItem?>(null) }
-    var adding by remember { mutableStateOf(false) }
+internal fun ServicePage(s: ServiceState, openSettings: () -> Unit) {
     val today = LocalDate.now()
     val rows = s.sorted(today)
 
     Row(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.width(340.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OdometerCard(s, actions)
-            RemindCard(s, actions)
+            Card("Car's odometer") {
+                val known = s.carKm
+                if (known != null) {
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(km(known.roundToInt()), color = C.ink, fontSize = 56.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+                        Text("km", color = C.muted, fontSize = 18.sp, modifier = Modifier.padding(bottom = 10.dp))
+                    }
+                } else {
+                    Text("Not known yet", color = C.muted, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.size(9.dp).clip(CircleShape).background(if (s.fromCan) C.good else C.lineHi))
+                    Text(
+                        when {
+                            s.fromCan -> "From the car, live (CAN box)"
+                            known != null -> "Counted on from OBD speed"
+                            else -> "Type it in Settings › Service"
+                        },
+                        color = C.ink2, fontSize = 15.sp,
+                    )
+                }
+            }
+            val due = rows.count { it.due }
+            Card("Service") {
+                Text(
+                    when (due) {
+                        0 -> "Nothing due"
+                        1 -> "1 item due"
+                        else -> "$due items due"
+                    },
+                    color = if (due > 0) C.red else C.ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+                )
+                Text("Change the items, how often, and log what's done in Settings › Service.", color = C.muted, fontSize = 14.sp)
+            }
             Spacer(Modifier.weight(1f))
             Box(
                 Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(26.dp)).background(C.panelHi)
-                    .border(1.dp, C.lineHi, RoundedCornerShape(26.dp)).clickable { adding = true },
+                    .border(1.dp, C.lineHi, RoundedCornerShape(26.dp)).clickable(onClick = openSettings),
                 contentAlignment = Alignment.Center,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Ic.plus, null, tint = C.ink, modifier = Modifier.size(20.dp))
-                    Text("Add an item", color = C.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Icon(Ic.wrench, null, tint = C.ink, modifier = Modifier.size(20.dp))
+                    Text("Change", color = C.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.height(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("SERVICE", color = C.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
-                Text(
-                    "Tap the pencil to change how often · Done logs it" + (s.carKm?.let { " at ${km(it.roundToInt())} km" } ?: "") + ", today",
-                    color = C.muted, fontSize = 14.sp, maxLines = 1,
-                )
-            }
+            Text("SERVICE", color = C.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, modifier = Modifier.height(22.dp))
             if (rows.isEmpty()) {
-                Text("Nothing to service yet: add an item.", color = C.muted, fontSize = 16.sp)
+                Text("Nothing to service: add items in Settings › Service.", color = C.muted, fontSize = 16.sp)
             }
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(rows, key = { it.item.id }) { st ->
-                    ServiceRow(st, s.carKm != null, onEdit = { editing = st.item }, onDone = { actions.serviceDone(st.item.id) })
+                items(rows, key = { it.item.id }) { st -> ServiceRow(st, s.carKm != null, onClick = openSettings) }
+            }
+        }
+    }
+}
+
+// ---------- Settings › Service ----------
+
+/**
+ * Setting the service up: the odometer (when the CAN box doesn't give it), the reminder, and each
+ * item with how often (the pencil), Done (at the odometer now, or the km and day it was really done)
+ * and Remove. Removed suggested items can be put back.
+ */
+@Composable
+internal fun ServiceSettings(s: ServiceState, actions: DashActions, diesel: Boolean) {
+    var editing by remember { mutableStateOf<ServiceItem?>(null) }
+    var picking by remember { mutableStateOf(false) }
+    var newItem by remember { mutableStateOf<ServiceItem?>(null) }
+    var doneFor by remember { mutableStateOf<ServiceItem?>(null) }
+    val missing = ServiceBook.defaults(diesel).count { d -> s.items.none { it.kind == d.kind } }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OdometerCard(s, actions)
+            RemindCard(s, actions)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Card("Items") {
+                if (s.items.isEmpty()) Text("No items: add one, or put the suggested ones back.", color = C.muted, fontSize = 15.sp)
+                s.items.forEach { item ->
+                    ServiceSettingRow(
+                        item = item,
+                        onEdit = { editing = item },
+                        onDone = { doneFor = item },
+                        onRemove = { actions.removeService(item.id) },
+                    )
                 }
+                Wide("Add an item") { picking = true }
+                if (missing > 0) {
+                    Wide("Put back the suggested items ($missing)") { actions.restoreService() }
+                }
+                Text(
+                    "The suggested items follow the engine (Settings › Car › Fuel use): a diesel has a fuel filter, a petrol spark plugs.",
+                    color = C.muted, fontSize = 13.sp, lineHeight = 18.sp,
+                )
             }
         }
     }
@@ -120,14 +192,174 @@ internal fun ServicePage(s: ServiceState, actions: DashActions) {
             onDismiss = { editing = null },
         )
     }
-    if (adding) {
-        val blank = remember { ServiceItem(ServiceBook.newId(), ServiceKind.CUSTOM, "", null, null, null, null) }
-        ServiceEditDialog(
-            item = blank, isNew = true, s = s,
-            onSave = { actions.saveService(it); adding = false },
-            onRemove = { adding = false },
-            onDismiss = { adding = false },
+    if (picking) {
+        AddItemDialog(
+            have = s.items.map { it.kind }.toSet(),
+            onPick = { k ->
+                picking = false
+                // A part from the list starts with its name and usual interval; Something else starts blank
+                val id = if (k != ServiceKind.CUSTOM && s.items.none { it.id == k.name }) k.name else ServiceBook.newId()
+                newItem = ServiceItem(id, k, k.title, k.everyKm, k.everyMonths, null, null)
+            },
+            onDismiss = { picking = false },
         )
+    }
+    newItem?.let { item ->
+        ServiceEditDialog(
+            item = item, isNew = true, s = s,
+            onSave = { actions.saveService(it); newItem = null },
+            onRemove = { newItem = null },
+            onDismiss = { newItem = null },
+        )
+    }
+    doneFor?.let { item ->
+        DoneDialog(item, s, onSave = { actions.saveService(it); doneFor = null }, onDismiss = { doneFor = null })
+    }
+}
+
+/** One item in Settings: its name, how often (the pencil), Done, and Remove (tap twice). */
+@Composable
+private fun ServiceSettingRow(item: ServiceItem, onEdit: () -> Unit, onDone: () -> Unit, onRemove: () -> Unit) {
+    var confirm by remember { mutableStateOf(false) }
+    LaunchedEffect(confirm) {
+        if (confirm) {
+            kotlinx.coroutines.delay(3_000)
+            confirm = false
+        }
+    }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.panelHi).border(1.dp, C.lineHi, RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(iconOf(item), null, tint = C.ink2, modifier = Modifier.size(24.dp))
+        Column(Modifier.weight(1f).clickable(onClick = onEdit), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(item.name, color = C.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Ic.pencil, "Change how often", tint = C.muted, modifier = Modifier.size(14.dp))
+                Text(intervalText(item.everyKm, item.everyMonths), color = C.muted, fontSize = 14.sp, maxLines = 1)
+            }
+        }
+        Box(
+            Modifier.width(84.dp).height(46.dp).clip(RoundedCornerShape(23.dp)).background(C.panel)
+                .border(1.dp, C.lineHi, RoundedCornerShape(23.dp)).clickable(onClick = onDone),
+            contentAlignment = Alignment.Center,
+        ) { Text("Done", color = C.ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+        Box(
+            Modifier.height(46.dp).widthIn(min = 46.dp).clip(RoundedCornerShape(23.dp))
+                .background(if (confirm) C.redTint else C.panel)
+                .border(1.dp, if (confirm) C.red else C.lineHi, RoundedCornerShape(23.dp))
+                .clickable { if (confirm) onRemove() else confirm = true }
+                .padding(horizontal = if (confirm) 12.dp else 0.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (confirm) Text("Remove?", color = C.red, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            else Icon(Ic.close, "Remove", tint = C.ink2, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+/**
+ * Adding an item: parts that need changing now and then, each with its icon and the usual interval
+ * to start from (the ones already on the list left out), and Something else, named by you.
+ */
+@Composable
+private fun AddItemDialog(have: Set<ServiceKind>, onPick: (ServiceKind) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(
+            Modifier.width(940.dp).heightIn(max = 640.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi)
+                .padding(horizontal = 24.dp, vertical = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Add an item", color = C.ink, fontSize = 24.sp)
+            Text("Pick a part: it starts with the usual interval, which you can change. Or Something else, with your own name and icon.",
+                color = C.muted, fontSize = 15.sp)
+            val kinds = ServiceKind.entries.filter { it != ServiceKind.CUSTOM && it !in have } + ServiceKind.CUSTOM
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                kinds.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { k -> PartTile(k, Modifier.weight(1f)) { onPick(k) } }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+            Row {
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2, fontSize = 15.sp) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PartTile(k: ServiceKind, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier.height(72.dp).clip(RoundedCornerShape(18.dp)).background(C.panel).border(1.dp, C.lineHi, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(46.dp).clip(RoundedCornerShape(14.dp)).background(C.panelHi), contentAlignment = Alignment.Center) {
+            Icon(iconOf(k), null, tint = C.ink2, modifier = Modifier.size(24.dp))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(if (k == ServiceKind.CUSTOM) "Something else" else k.title, color = C.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (k == ServiceKind.CUSTOM) "Your own name and icon" else intervalText(k.everyKm, k.everyMonths),
+                color = C.muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/**
+ * Done: at the odometer now and today, unless it was really done at another km or on another day
+ * (both can be changed before it's saved).
+ */
+@Composable
+private fun DoneDialog(item: ServiceItem, s: ServiceState, onSave: (ServiceItem) -> Unit, onDismiss: () -> Unit) {
+    val now = s.carKm?.roundToInt()
+    var atKm by remember { mutableStateOf(now?.toString() ?: "") }
+    var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
+    var picking by remember { mutableStateOf(false) }
+    KeyboardDialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.width(620.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi).padding(horizontal = 28.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("${item.name}: done", color = C.ink, fontSize = 24.sp)
+            Text(
+                if (now != null) "The car is at ${km(now)} km now. If it was done at another km or on another day, change them here."
+                else "Type the km it was done at.",
+                color = C.muted, fontSize = 15.sp, lineHeight = 21.sp,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                NumberField("Done at", atKm, "km", now?.toString() ?: "184216", Modifier.weight(1f)) { atKm = it }
+                Field("on", Modifier.weight(1f)) {
+                    Row(
+                        Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(4.dp)).border(1.dp, C.lineHi, RoundedCornerShape(4.dp))
+                            .clickable { picking = true }.padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(LocalDate.ofEpochDay(day).format(DAY), color = C.ink, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                        Icon(Ic.calendar, "Choose the day", tint = C.ink2, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (now != null && atKm != now.toString()) {
+                    TextButton(onClick = { atKm = now.toString() }) { Text("Back to ${km(now)} km", color = C.ink2, fontSize = 15.sp) }
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2, fontSize = 15.sp) }
+                TextButton(onClick = { onSave(item.copy(lastKm = atKm.toIntOrNull(), lastDay = day)) }) {
+                    Text("Save", color = C.red, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+    if (picking) {
+        PickDate(LocalDate.ofEpochDay(day), onPick = { day = it.toEpochDay() }, onDismiss = { picking = false })
     }
 }
 
@@ -217,9 +449,9 @@ internal fun RoundIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
     ) { Icon(icon, label, tint = C.ink, modifier = Modifier.size(18.dp)) }
 }
 
-/** One item: what it is, how often (tap to change), how far off it is, and Done. */
+/** One item on the Service page: what it is, how often, how far off it is. Tap to change it in Settings. */
 @Composable
-private fun ServiceRow(st: ServiceStatus, odometerKnown: Boolean, onEdit: () -> Unit, onDone: () -> Unit) {
+private fun ServiceRow(st: ServiceStatus, odometerKnown: Boolean, onClick: () -> Unit) {
     val item = st.item
     val overdue = st.urgency == Urgency.OVERDUE
     val due = st.due
@@ -231,13 +463,13 @@ private fun ServiceRow(st: ServiceStatus, odometerKnown: Boolean, onEdit: () -> 
             .clip(shape)
             .background(if (overdue) C.redTint else C.panel)
             .border(1.dp, if (overdue) C.red else if (due) C.redDeep else C.line, shape)
-            .clickable(onClick = onEdit)
+            .clickable(onClick = onClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(C.panelHi), contentAlignment = Alignment.Center) {
-            Icon(iconOf(item.kind), null, tint = if (due) C.red else C.ink2, modifier = Modifier.size(28.dp))
+            Icon(iconOf(item), null, tint = if (due) C.red else C.ink2, modifier = Modifier.size(28.dp))
         }
         Column(Modifier.width(262.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -246,15 +478,7 @@ private fun ServiceRow(st: ServiceStatus, odometerKnown: Boolean, onEdit: () -> 
                 if (overdue) Pill("OVERDUE", solid = true)
                 else if (due) Pill("DUE SOON", solid = false)
             }
-            Row(
-                Modifier.height(44.dp).clip(RoundedCornerShape(22.dp)).background(C.panelHi)
-                    .border(1.dp, C.lineHi, RoundedCornerShape(22.dp)).clickable(onClick = onEdit).padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                Icon(Ic.pencil, "Change how often", tint = C.ink2, modifier = Modifier.size(16.dp))
-                Text(intervalText(item.everyKm, item.everyMonths), color = C.ink2, fontSize = 14.sp, maxLines = 1)
-            }
+            Text(intervalText(item.everyKm, item.everyMonths), color = C.muted, fontSize = 15.sp, maxLines = 1)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
@@ -269,13 +493,6 @@ private fun ServiceRow(st: ServiceStatus, odometerKnown: Boolean, onEdit: () -> 
             }
             Text(nextText(st), color = C.muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Box(
-            Modifier.width(100.dp).height(56.dp).clip(RoundedCornerShape(28.dp))
-                .background(if (due) C.redTint else C.panelHi)
-                .border(1.dp, if (due) C.red else C.lineHi, RoundedCornerShape(28.dp))
-                .clickable(onClick = onDone),
-            contentAlignment = Alignment.Center,
-        ) { Text("Done", color = C.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
     }
 }
 
@@ -307,6 +524,7 @@ private fun ServiceEditDialog(
     var lastDay by remember { mutableStateOf(item.lastDay) }
     var picking by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
+    var icon by remember { mutableStateOf(item.icon) }
 
     fun form() = item.copy(
         name = name.trim().take(30),
@@ -314,6 +532,7 @@ private fun ServiceEditDialog(
         everyMonths = everyMonths.toIntOrNull()?.takeIf { it > 0 },
         lastKm = lastKm.toIntOrNull(),
         lastDay = lastDay,
+        icon = icon,
     )
     val today = LocalDate.now()
     val preview = statusOf(form(), s.carKm, today, s.kmBefore, s.daysBefore)
@@ -340,6 +559,22 @@ private fun ServiceEditDialog(
                     colors = fieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            Field("Icon") {
+                val shown = iconOf(form())
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ICON_CHOICES.forEach { k ->
+                        val v = iconOf(k)
+                        val chosen = v == shown
+                        Box(
+                            Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(if (chosen) C.redTint else C.panel)
+                                .border(1.dp, if (chosen) C.red else C.lineHi, RoundedCornerShape(12.dp))
+                                // Its own kind's icon is kept as none picked
+                                .clickable { icon = if (v == iconOf(item.kind)) null else k.name },
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(v, k.title.ifEmpty { "Wrench" }, tint = if (chosen) C.ink else C.ink2, modifier = Modifier.size(24.dp)) }
+                    }
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 NumberField("Every", everyKm, "km", "15000", Modifier.weight(1f)) { everyKm = it }
@@ -574,8 +809,27 @@ private fun iconOf(kind: ServiceKind): ImageVector = when (kind) {
     ServiceKind.SPARK_PLUGS -> Ic.plug
     ServiceKind.FUEL_FILTER -> Ic.fuel
     ServiceKind.BRAKE_FLUID -> Ic.drop
+    ServiceKind.TIMING_BELT, ServiceKind.AUX_BELT -> Ic.belt
+    ServiceKind.GEARBOX_OIL -> Ic.gearbox
+    ServiceKind.HALDEX -> Ic.settings
+    ServiceKind.COOLANT -> Ic.coolant
+    ServiceKind.BRAKE_PADS -> Ic.pads
+    ServiceKind.BRAKE_DISCS -> Ic.disc
+    ServiceKind.TYRES -> Ic.tyre
+    ServiceKind.WIPERS -> Ic.wiper
+    ServiceKind.BATTERY -> Ic.battery
+    ServiceKind.GLOW_PLUGS -> Ic.glow
+    ServiceKind.AIRCON -> Ic.snow
+    ServiceKind.NCT -> Ic.check
     ServiceKind.CUSTOM -> Ic.wrench
 }
+
+/** An item's icon: the one picked for it, else its kind's. */
+private fun iconOf(item: ServiceItem): ImageVector =
+    item.icon?.let { k -> runCatching { iconOf(ServiceKind.valueOf(k)) }.getOrNull() } ?: iconOf(item.kind)
+
+/** The icons to pick from: one for each kind of part (the two belts share one), and the wrench. */
+private val ICON_CHOICES: List<ServiceKind> by lazy { ServiceKind.entries.distinctBy { iconOf(it) } }
 
 /** "Every 15,000 km or 12 months", "Every 2 years"… */
 private fun intervalText(everyKm: Int?, everyMonths: Int?): String {

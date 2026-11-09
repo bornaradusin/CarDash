@@ -166,6 +166,7 @@ class MainActivity : ComponentActivity() {
             saveService = { app.service.save(it) },
             removeService = { app.service.remove(it) },
             serviceDone = { app.service.done(it) },
+            restoreService = { app.service.restoreDefaults(app.settings.diesel.value) },
             setRemindKm = { app.service.setKmBefore(it) },
             setRemindDays = { app.service.setDaysBefore(it) },
             setCarKm = { app.service.setCarKm(it) },
@@ -264,6 +265,7 @@ class MainActivity : ComponentActivity() {
             val roadLights by app.settings.roadLights.collectAsState()
             val roadCameras by app.settings.roadCameras.collectAsState()
             val roadZones by app.settings.roadZones.collectAsState()
+            val weather by app.weather.now.collectAsState()
             val cameraVoice by app.settings.cameraVoice.collectAsState()
             val accent by app.settings.accent.collectAsState()
             val spoken by app.settings.spoken.collectAsState()
@@ -303,6 +305,7 @@ class MainActivity : ComponentActivity() {
                 fullScreen = fullScreen,
                 homePresses = homePresses,
                 sharedRoutes = sharedRoutes,
+                weather = weather,
                 searchFor = searchFor,
                 diesel = diesel,
                 can = can,

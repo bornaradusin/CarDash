@@ -63,6 +63,36 @@ object Ic {
     val minus = icon("minus", "M5 12h14")
     val back = icon("back", "M15 18l-6-6 6-6")
     val close = icon("close", "M6 6l12 12", "M18 6L6 18")
+    // The weather
+    val sun = icon("sun", circle(12f, 12f, 4f), "M12 2v2", "M12 20v2", "M2 12h2", "M20 12h2",
+        "M4.9 4.9l1.4 1.4", "M17.7 17.7l1.4 1.4", "M4.9 19.1l1.4-1.4", "M17.7 6.3l1.4-1.4")
+    val moon = icon("moon", "M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z")
+    val cloud = icon("cloud", "M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 11 3.5 3.5 0 0 0 7 18z")
+    val partly = icon("partly", circle(8f, 8f, 2.5f), "M8 2.5v1", "M2.5 8h1", "M4.1 4.1l.7.7", "M11.9 4.1l-.7.7",
+        "M9 20h8a3.5 3.5 0 0 0 .4-6.98A5 5 0 0 0 8.2 13.5 3 3 0 0 0 9 20z")
+    val fog = icon("fog", "M7 11h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 4 3.5 3.5 0 0 0 7 11z", "M4 15h16", "M6 19h12")
+    val rain = icon("rain", "M7 14h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 7 3.5 3.5 0 0 0 7 14z", "M8 17l-1 3", "M12 17l-1 3", "M16 17l-1 3")
+    val snowfall = icon("snowfall", "M7 14h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 7 3.5 3.5 0 0 0 7 14z", "M8 18v.5", "M12 20v.5", "M16 18v.5", "M10 21.5v.5", "M14 21.5v.5")
+    val thunder = icon("thunder", "M7 14h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 7 3.5 3.5 0 0 0 7 14z", "M12.5 14l-2 4h3l-2 4")
+
+    // Service parts
+    /** Two pulleys and a belt: timing and auxiliary belts. */
+    val belt = icon("belt", circle(7f, 12f, 4f), circle(18f, 12f, 2.5f), "M7 8l11 1.5", "M7 16l11-1.5")
+    /** A gear lever's H. */
+    val gearbox = icon("gearbox", "M6 5v14", "M12 5v14", "M18 5v7", "M6 12h12")
+    /** A brake disc. */
+    val disc = icon("disc", circle(12f, 12f, 9f), circle(12f, 12f, 3.5f), "M12 5.5v1", "M12 17.5v1", "M5.5 12h1", "M17.5 12h1")
+    /** A brake pad. */
+    val pads = icon("pads", "M4 15a8 8 0 0 1 16 0v3H4z", "M8 18v2", "M16 18v2")
+    /** A tyre. */
+    val tyre = icon("tyre", circle(12f, 12f, 9f), circle(12f, 12f, 4.5f), "M12 3v3", "M12 18v3", "M3 12h3", "M18 12h3")
+    /** A wiper on its pivot. */
+    val wiper = icon("wiper", circle(6f, 18f, 1.5f), "M7 17L18 6", "M15 4l5 5")
+    /** A snowflake: air con. */
+    val snow = icon("snow", "M12 3v18", "M4.2 7.5l15.6 9", "M4.2 16.5l15.6-9", "M10 5l2 2 2-2", "M10 19l2-2 2 2")
+    /** A glow plug. */
+    val glow = icon("glow", "M12 2v4", "M9 6h6v4H9z", "M12 10v2", "M10 12l4 2-4 2 4 2-2 1")
+
     /** A speed van: for GoSafe zones. */
     val van = icon("van", "M2 16V7a1 1 0 0 1 1-1h11l4 4h3a1 1 0 0 1 1 1v5", "M2 16h20", circle(6.5f, 17.5f, 2f), circle(17f, 17.5f, 2f), circle(7.5f, 10.5f, 2f))
 

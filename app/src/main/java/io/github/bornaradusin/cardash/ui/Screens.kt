@@ -164,6 +164,8 @@ data class DashState(
     val searchFor: String? = null,
     /** Goes up each time a shared place's route starts. */
     val sharedRoutes: Int = 0,
+    /** The weather where the car is, for the header. */
+    val weather: io.github.bornaradusin.cardash.nav.WeatherNow? = null,
     /** The engine runs on diesel: fuel use is worked out from load and RPM, not air flow. */
     val diesel: Boolean,
     val can: CanState,
@@ -238,6 +240,8 @@ class DashActions(
     val removeService: (String) -> Unit,
     /** Logs an item as done today, at the odometer now. */
     val serviceDone: (String) -> Unit,
+    /** Settings › Service: the suggested items that were removed, back. */
+    val restoreService: () -> Unit = {},
     val setRemindKm: (Int) -> Unit,
     val setRemindDays: (Int) -> Unit,
     /** The odometer as typed from the dashboard, when the CAN box doesn't give it. */
@@ -379,6 +383,8 @@ fun CarDash(state: DashState, actions: DashActions) {
         if (routing && centre.currentPage == VIEW_CAR) centre.animateScrollToPage(VIEW_MAP)
     }
     var searchText by remember { mutableStateOf("") }
+    /** The Settings section it opens on: Driving from the cog, Service from the Service page. */
+    var settingsStart by remember { mutableStateOf(SettingsSection.DRIVING) }
     // The radio's Back button closes Settings and Where to?
     androidx.activity.compose.BackHandler(enabled = settings || whereTo) {
         settings = false
@@ -414,12 +420,12 @@ fun CarDash(state: DashState, actions: DashActions) {
             page = if (settings || whereTo) null else pager.currentPage,
             onPage = { scope.launch { settings = false; whereTo = false; pager.animateScrollToPage(it) } },
             onName = { naming = true },
-            onSettings = { whereTo = false; settings = !settings },
+            onSettings = { whereTo = false; settingsStart = SettingsSection.DRIVING; settings = !settings },
             onService = { scope.launch { settings = false; whereTo = false; pager.animateScrollToPage(PAGE_SERVICE) } },
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
-                settings -> SettingsScreen(state, actions) { settings = false }
+                settings -> SettingsScreen(state, actions, settingsStart) { settings = false }
                 whereTo -> WhereToScreen(state, actions, searchText) {
                     whereTo = false
                     scope.launch { if (pager.currentPage != PAGE_HOME) pager.scrollToPage(PAGE_HOME) }
@@ -434,7 +440,7 @@ fun CarDash(state: DashState, actions: DashActions) {
                             AppsScreen(state.apps, actions)
                         }
                         PAGE_HOME -> Home(state, actions, centre, openSearch, mapDash, { mapDash = it }) { scope.launch { pager.animateScrollToPage(PAGE_APPS) } }
-                        PAGE_SERVICE -> ServicePage(state.service, actions)
+                        PAGE_SERVICE -> ServicePage(state.service) { settingsStart = SettingsSection.SERVICE; settings = true }
                         else -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
                             Gauges(state.obd, state.canValues, state.gear, actions)
                         }
@@ -464,6 +470,17 @@ fun CarDash(state: DashState, actions: DashActions) {
     state.nav.alert?.let { RoadAlertWarning(it) }
     // Starting up: the name fades in on black, then the dash fades in under it
     BootFade(state.name)
+}
+
+/** The weather's picture: the sun by day, the moon by night when it's clear. */
+private fun weatherIcon(w: io.github.bornaradusin.cardash.nav.WeatherNow): ImageVector = when (w.sky) {
+    io.github.bornaradusin.cardash.nav.Sky.CLEAR -> if (w.day) Ic.sun else Ic.moon
+    io.github.bornaradusin.cardash.nav.Sky.PARTLY -> if (w.day) Ic.partly else Ic.cloud
+    io.github.bornaradusin.cardash.nav.Sky.CLOUDY -> Ic.cloud
+    io.github.bornaradusin.cardash.nav.Sky.FOG -> Ic.fog
+    io.github.bornaradusin.cardash.nav.Sky.RAIN -> Ic.rain
+    io.github.bornaradusin.cardash.nav.Sky.SNOW -> Ic.snowfall
+    io.github.bornaradusin.cardash.nav.Sky.THUNDER -> Ic.thunder
 }
 
 /** Once per start of the app (the radio starting): not when coming back to it. */
@@ -732,8 +749,13 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
                 Box(Modifier.size(9.dp).clip(CircleShape).background(if (state.obd.link == Link.CONNECTED) C.good else C.lineHi))
                 Text("OBD", color = C.muted, fontSize = 14.sp)
             }
-            state.obd.readings.ambientC?.let {
-                Text("${it.toInt()} °C", color = C.ink2, fontSize = 18.sp)
+            // The outside temperature, with the weather where the car is
+            val sky = state.weather
+            if (sky != null || state.obd.readings.ambientC != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    sky?.let { Icon(weatherIcon(it), it.sky.name.lowercase(), tint = C.ink2, modifier = Modifier.size(24.dp)) }
+                    state.obd.readings.ambientC?.let { Text("${it.toInt()} °C", color = C.ink2, fontSize = 18.sp) }
+                }
             }
             Box(
                 Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = onSettings),
@@ -1695,6 +1717,7 @@ private enum class SettingsSection(val title: String, val sub: String) {
     LOOK("Look", "Colour, name, screen"),
     MUSIC("Music", "The music app"),
     PERMISSIONS("Permissions", "What CarDash may use"),
+    SERVICE("Service", "Items, how often, done"),
     UPDATES("Updates", "New versions from GitHub"),
 }
 
@@ -1706,13 +1729,14 @@ private val SettingsSection.icon: ImageVector
         SettingsSection.LOOK -> Ic.star
         SettingsSection.MUSIC -> Ic.music
         SettingsSection.PERMISSIONS -> Ic.check
+        SettingsSection.SERVICE -> Ic.wrench
         SettingsSection.UPDATES -> Ic.download
     }
 
 @Composable
-private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> Unit) {
+private fun SettingsScreen(state: DashState, actions: DashActions, start: SettingsSection = SettingsSection.DRIVING, close: () -> Unit) {
     val context = LocalContext.current
-    var section by rememberSaveable { mutableStateOf(SettingsSection.DRIVING) }
+    var section by rememberSaveable(start) { mutableStateOf(start) }
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             // A big Back, easy to hit while driving (the radio's Back button does the same)
@@ -1756,6 +1780,7 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                         SettingsSection.LOOK -> TwoColumns({ AccentCard(state, actions) }, { NameCard(state, actions); ScreenCard(state, actions) })
                         SettingsSection.MUSIC -> TwoColumns({ MusicCard(state, actions) }, { })
                         SettingsSection.PERMISSIONS -> TwoColumns({ PermissionsCard(state, actions) }, { })
+                        SettingsSection.SERVICE -> ServiceSettings(state.service, actions, state.diesel)
                         SettingsSection.UPDATES -> TwoColumns({ UpdatesCard((context.applicationContext as io.github.bornaradusin.cardash.CarDashApp).updater) }, { })
                     }
                 }
