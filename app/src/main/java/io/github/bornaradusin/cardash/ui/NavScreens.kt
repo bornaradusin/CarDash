@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -368,7 +369,11 @@ internal fun MapDash(state: DashState, actions: DashActions, openSearch: () -> U
     val shape = RoundedCornerShape(20.dp)
     val panel = Modifier.clip(shape).background(C.panel.copy(alpha = 0.9f)).border(1.dp, C.line, shape)
     Box(modifier.fillMaxSize()) {
-        NavMap(nav, Modifier.fillMaxSize())
+        // Moved with a finger and zoomed with two, in the middle and on the right
+        NavMap(nav, Modifier.fillMaxSize(), interactive = true)
+        // The left of the screen is for swiping: up or down to the main dash, sideways between the pages.
+        // The map doesn't get touches there
+        Box(Modifier.width(LEFT_SWIPE).fillMaxHeight().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } })
         // Top left: the next turn and the one after, or what's happening
         Box(Modifier.align(Alignment.TopStart).padding(16.dp).widthIn(max = 380.dp)) {
             when {

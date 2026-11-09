@@ -449,6 +449,49 @@ fun CarDash(state: DashState, actions: DashActions) {
     if (state.speedWarnOn) SpeedWarning(state.obd.readings.speedKmh, state.speedWarnKmh)
     // A camera (red) or speed van zone (orange) 1 km ahead: over everything for a few seconds
     state.nav.alert?.let { RoadAlertWarning(it) }
+    // Starting up: the name fades in on black, then the dash fades in under it
+    BootFade(state.name)
+}
+
+/** Once per start of the app (the radio starting): not when coming back to it. */
+private object Boot {
+    var shown = false
+}
+
+/**
+ * The start: black, CarDash's name (yours, if you've changed it) fading in, a moment, then the whole
+ * thing fading away to the dash. About 1.8 seconds; touches wait for it.
+ */
+@Composable
+private fun BootFade(name: String) {
+    var done by remember { mutableStateOf(Boot.shown) }
+    if (done) return
+    val logo = remember { androidx.compose.animation.core.Animatable(0f) }
+    val cover = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(Unit) {
+        Boot.shown = true
+        logo.animateTo(1f, tween(700))
+        delay(450)
+        cover.animateTo(0f, tween(650))
+        done = true
+    }
+    Box(
+        Modifier.size(1280.dp, 720.dp).graphicsLayer { alpha = cover.value }.background(Color.Black)
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } },
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            Modifier.graphicsLayer {
+                alpha = logo.value
+                val s = 0.94f + 0.06f * logo.value
+                scaleX = s
+                scaleY = s
+            },
+        ) {
+            Text(name, color = C.ink, fontSize = 64.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+            Text(" //", color = C.red, fontSize = 64.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+        }
+    }
 }
 
 /** The camera or zone warning across the whole screen, for 3 seconds from when it went off; then the sign in the header. */
@@ -809,7 +852,9 @@ private fun Home(
     val doors = remember(state.can) { Doors.from(state.can.values) }
     // The big map takes the RPM dial's place (its own view, route or not); an open door shows over it
     val views = centreViews(state.routed())
-    val big = views.getOrElse(centre.currentPage) { views.last() } == VIEW_BIG_MAP && !doors.anyOpen
+    // Once the swipe has settled, not halfway through it: the dial going and the box widening mid-swipe
+    // made the swipe judder
+    val big = views.getOrElse(centre.settledPage) { views.last() } == VIEW_BIG_MAP && !doors.anyOpen
     Column(Modifier.fillMaxSize()) {
         // Up or down on the left of the screen: the main dash or the map dash (the middle box keeps its own swipe)
         val swipe = Modifier.leftSwipe(LEFT_SWIPE) { setMapDash(!mapDash) }
@@ -864,7 +909,7 @@ private fun Home(
 
 
 /** How far in from the left a swipe up or down switches between the main dash and the map dash. */
-private val LEFT_SWIPE = 300.dp
+internal val LEFT_SWIPE = 300.dp
 
 /**
  * A swipe up or down that starts within [zone] of the left edge calls [onSwipe]. It only takes over

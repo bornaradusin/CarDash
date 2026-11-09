@@ -136,7 +136,9 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
                 throw e
             } catch (e: Exception) {
                 _state.value = UpdateState.Failed(
-                    if (e.message?.contains("checksum") == true) "The download was damaged. Try again." else "The download didn't finish. Try again.",
+                    if (e.message?.contains("checksum") == true) "The download was damaged. Try again."
+                    // Why, so a failure that keeps happening can be put right
+                    else "The download didn't finish (${e.message ?: e.javaClass.simpleName}). Try again.",
                     update,
                 )
             }
@@ -207,6 +209,8 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
 
     /** The newest release if it's newer than this app, or null. Throws if GitHub can't be reached. */
     private suspend fun latest(): AppUpdate? = withContext(Dispatchers.IO) {
+        // Connections kept from before the radio slept may be dead
+        client.connectionPool.evictAll()
         val release = client.newCall(request(LATEST).header("Accept", "application/vnd.github+json").build()).execute().use { res ->
             if (!res.isSuccessful) throw IOException("GitHub answered ${res.code}")
             JSONObject(res.body?.string().orEmpty())
@@ -227,39 +231,61 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
         )
     }
 
+    /**
+     * Downloads the APK into the cache and checks it against SHA256SUMS.txt. The radio sleeps with the
+     * car and wakes on a different connection, so connections kept from before are dropped first, and
+     * a download that stops is picked up where it got to (up to [TRIES] times) rather than failing.
+     */
     private suspend fun download(update: AppUpdate, progress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
+        client.connectionPool.evictAll()
         val expected = update.sumsUrl?.let { url ->
-            client.newCall(request(url).build()).execute().use { res ->
-                if (!res.isSuccessful) throw IOException("GitHub answered ${res.code}")
-                res.body?.string().orEmpty().lineSequence()
-                    .map { it.trim().split(Regex("\\s+")) }
-                    .firstOrNull { it.size >= 2 && it.last().removePrefix("*") == update.apkName }
-                    ?.first()?.lowercase()
+            retrying {
+                client.newCall(request(url).build()).execute().use { res ->
+                    if (!res.isSuccessful) throw IOException("GitHub answered ${res.code}")
+                    res.body?.string().orEmpty().lineSequence()
+                        .map { it.trim().split(Regex("\\s+")) }
+                        .firstOrNull { it.size >= 2 && it.last().removePrefix("*") == update.apkName }
+                        ?.first()?.lowercase()
+                }
             }
         }
         val dir = File(context.cacheDir, DIR).apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
         val file = File(dir, update.apkName)
         val partial = File(dir, "${update.apkName}.part")
-        val digest = MessageDigest.getInstance("SHA-256")
-        client.newCall(request(update.apkUrl).build()).execute().use { res ->
-            if (!res.isSuccessful) throw IOException("GitHub answered ${res.code}")
-            val body = res.body ?: throw IOException("Nothing came back")
-            val total = body.contentLength().takeIf { it > 0 } ?: update.apkSize
-            body.byteStream().use { input ->
-                partial.outputStream().use { out ->
-                    val buffer = ByteArray(64 * 1024)
-                    var done = 0L
-                    while (true) {
-                        coroutineContext.ensureActive()
-                        val n = input.read(buffer)
-                        if (n < 0) break
-                        out.write(buffer, 0, n)
-                        digest.update(buffer, 0, n)
-                        done += n
-                        if (total > 0) progress((done.toFloat() / total).coerceIn(0f, 1f))
+        retrying {
+            val have = partial.length()
+            val req = request(update.apkUrl).apply { if (have > 0) header("Range", "bytes=$have-") }.build()
+            client.newCall(req).execute().use { res ->
+                if (!res.isSuccessful) throw IOException("GitHub answered ${res.code}")
+                val body = res.body ?: throw IOException("nothing came back")
+                // 206: the rest of it, after what's already here; 200: the whole file again
+                val resumed = res.code == 206
+                var done = if (resumed) have else 0L
+                val total = if (resumed) have + body.contentLength() else body.contentLength().takeIf { it > 0 } ?: update.apkSize
+                body.byteStream().use { input ->
+                    java.io.FileOutputStream(partial, resumed).use { out ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            out.write(buffer, 0, n)
+                            done += n
+                            if (total > 0) progress((done.toFloat() / total).coerceIn(0f, 1f))
+                        }
                     }
                 }
+                if (update.apkSize > 0 && partial.length() < update.apkSize) throw IOException("stopped at ${partial.length() * 100 / update.apkSize}%")
+            }
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        partial.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                digest.update(buffer, 0, n)
             }
         }
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
@@ -267,14 +293,31 @@ class Updater(private val context: Context, private val scope: CoroutineScope) {
             partial.delete()
             throw IOException("The download doesn't match the release's checksum")
         }
-        if (!partial.renameTo(file)) throw IOException("Couldn't keep the download")
+        if (!partial.renameTo(file)) throw IOException("couldn't keep the download")
         file
+    }
+
+    /** [block], tried again a couple of seconds later on fresh connections if the network lets it down. */
+    private suspend fun <T> retrying(block: suspend () -> T): T {
+        var last: IOException? = null
+        repeat(TRIES) { attempt ->
+            try {
+                return block()
+            } catch (e: IOException) {
+                if (e.message?.contains("checksum") == true) throw e
+                last = e
+                client.connectionPool.evictAll()
+                if (attempt < TRIES - 1) delay(2_000L * (attempt + 1))
+            }
+        }
+        throw last ?: IOException("the download failed")
     }
 
     companion object {
         private const val LATEST = "https://api.github.com/repos/bornaradusin/CarDash/releases/latest"
         private const val DIR = "updates"
         private const val EVERY_MS = 20 * 3600 * 1000L
+        private const val TRIES = 4
 
         /** Deletes downloaded APKs, once an update is installed. */
         fun clean(context: Context) {

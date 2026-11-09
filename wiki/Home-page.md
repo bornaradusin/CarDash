@@ -1,4 +1,4 @@
-The page CarDash opens on, and the one the radio's Home button brings you back to.
+The page CarDash opens on, and the one the radio's Home button brings you back to. When the radio starts, CarDash's name fades in on black, then the dash fades in.
 
 ![Home, flat out from standstill to top speed through all six gears (Shift up and the speed warning turned off for this one)](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/home.gif)
 
@@ -49,6 +49,8 @@ Over whatever view is on: the TT from above, with what's open in the accent colo
 **Swipe up or down on the left of the screen** (over the RPM dial) to swap the dials for the map dash, and again to come back. The middle box keeps its own swipe.
 
 The 3D map fills the whole middle, turning with the car. On it: the next turn big, top left, with the one after it; arriving, minutes left and distance to go, top right, with **Mute** and **End route**; your speed with the speed limit and the traffic lights ahead, bottom left; and the gear, revs, oil, boost and fuel, bottom right. Without a route it shows the street you're on and **Where to?**.
+
+On the map dash you can move the map with a finger and zoom with two, anywhere in the middle or on the right (the left of the screen stays for swiping). The map stops following the car while you look around; **Follow the car** at the bottom puts it back, and so does leaving it alone for 20 seconds.
 
 ## Along the bottom
 

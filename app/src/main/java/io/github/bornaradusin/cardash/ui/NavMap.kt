@@ -7,6 +7,19 @@ import android.view.Gravity
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -68,6 +81,11 @@ private class MapHolder {
     var view: MapView? = null
     var ready by mutableStateOf(false)
 
+    /** The camera follows the car; off once the map's been moved by hand (on a map you can move). */
+    var following by mutableStateOf(true)
+    /** When the map was last moved by hand. */
+    var touchedAt by mutableStateOf(0L)
+
     /** The direction of the road at the car, from the last GPS fix. */
     var roadBearing: Double? = null
 
@@ -100,9 +118,13 @@ private class MapHolder {
 /**
  * The 3D map: tilted, turning with the car, the route in the accent colour and an arrow at the next
  * turn. The car is the TT from behind, drawn on top a little below the middle, so more of the road ahead shows.
+ *
+ * [interactive] (the map dash): moved with a finger and zoomed with two. The map stops following the
+ * car then; **Follow the car** puts it back, and so does leaving it alone for 20 seconds. Otherwise the
+ * map takes no touches, so swipes reach the middle box around it.
  */
 @Composable
-fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
+fun NavMap(nav: NavState, modifier: Modifier = Modifier, interactive: Boolean = false) {
     val holder = remember { MapHolder() }
     val accent = C.red
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -117,8 +139,21 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
                     mv.getMapAsync { map ->
                         holder.map = map
                         map.addOnCameraMoveListener { holder.alignCar() }
+                        // Moved by hand: stop following the car for now
+                        map.addOnCameraMoveStartedListener { reason ->
+                            if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
+                                holder.following = false
+                                holder.touchedAt = System.currentTimeMillis()
+                            }
+                        }
                         map.uiSettings.apply {
                             setAllGesturesEnabled(false)
+                            if (interactive) {
+                                isScrollGesturesEnabled = true
+                                isZoomGesturesEnabled = true
+                                isRotateGesturesEnabled = true
+                                isDoubleTapGesturesEnabled = true
+                            }
                             isCompassEnabled = false
                             isLogoEnabled = false
                             // The map's credits (OpenStreetMap, OpenFreeMap): a small grey "i" above the
@@ -139,10 +174,15 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
             },
             modifier = Modifier.fillMaxSize(),
         )
-        // The car, seen from behind, a little below the middle. This layer also keeps touches off the
-        // map view, so swipes and holds reach the middle box
-        BoxWithConstraints(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }) {
-            if (nav.here != null) {
+        // Dark until the map's style is in, then faded away: no white flash while it starts
+        val cover by animateFloatAsState(if (holder.ready) 0f else 1f, tween(300), label = "map cover")
+        if (cover > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = cover }.background(C.bg))
+        // The car, seen from behind, a little below the middle (where the camera puts it while following).
+        // On a map you can't move, this layer also keeps touches off the map view, so swipes and holds
+        // reach the middle box
+        val catcher = if (interactive) Modifier else Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
+        BoxWithConstraints(Modifier.fillMaxSize().then(catcher)) {
+            if (nav.here != null && holder.following) {
                 val w = 39.dp
                 val h = w * (214f / 256f)
                 // Turned with the road under it; eased, so a new GPS fix on a bend doesn't make it twitch
@@ -154,6 +194,25 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
                 )
             }
         }
+        // Moved by hand: back to following the car
+        if (interactive && !holder.following) {
+            Row(
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp).height(52.dp).clip(RoundedCornerShape(26.dp))
+                    .background(C.panel.copy(alpha = 0.94f)).border(1.dp, C.lineHi, RoundedCornerShape(26.dp))
+                    .clickable { holder.following = true }.padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                androidx.compose.material3.Icon(Ic.map, null, tint = C.red, modifier = Modifier.size(22.dp))
+                androidx.compose.material3.Text("Follow the car", color = C.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+    // Left alone for 20 seconds: following again
+    LaunchedEffect(holder.following, holder.touchedAt) {
+        if (holder.following) return@LaunchedEffect
+        delay(20_000)
+        holder.following = true
     }
 
     // The map view's own life follows the screen's
@@ -222,7 +281,8 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier) {
         val src = style.getSourceAs<GeoJsonSource>(SIGNALS_SRC) ?: return@LaunchedEffect
         src.setGeoJson(FeatureCollection.fromFeatures(nav.signals.map { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) }))
     }
-    LaunchedEffect(holder.ready, nav.here, nav.heading) {
+    LaunchedEffect(holder.ready, nav.here, nav.heading, holder.following) {
+        if (!holder.following) return@LaunchedEffect
         val map = holder.map ?: return@LaunchedEffect
         val here = nav.here ?: return@LaunchedEffect
         val h = (holder.view?.height ?: 0).toDouble()
