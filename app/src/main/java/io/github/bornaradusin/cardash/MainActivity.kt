@@ -165,6 +165,11 @@ class MainActivity : ComponentActivity() {
             setTopGear = { app.settings.setTopGear(it) },
             setGearCount = { app.gears.setCount(it) },
             setShiftHints = { app.settings.setShiftHints(it) },
+            setRoadLimits = { app.settings.setRoadLimits(it) },
+            setRoadLights = { app.settings.setRoadLights(it) },
+            setRoadCameras = { app.settings.setRoadCameras(it) },
+            setRoadZones = { app.settings.setRoadZones(it) },
+            setCameraVoice = { app.settings.setCameraVoice(it) },
             setShiftUpAt = { g, r -> app.settings.setShiftUpAt(g, r) },
             setShiftDownAt = { g, r -> app.settings.setShiftDownAt(g, r) },
             resetShiftPoints = { app.settings.resetShiftPoints() },
@@ -237,6 +242,11 @@ class MainActivity : ComponentActivity() {
             val shiftUpAt by app.settings.shiftUpAt.collectAsState()
             val shiftDownAt by app.settings.shiftDownAt.collectAsState()
             val shiftHints by app.settings.shiftHints.collectAsState()
+            val roadLimits by app.settings.roadLimits.collectAsState()
+            val roadLights by app.settings.roadLights.collectAsState()
+            val roadCameras by app.settings.roadCameras.collectAsState()
+            val roadZones by app.settings.roadZones.collectAsState()
+            val cameraVoice by app.settings.cameraVoice.collectAsState()
             val accent by app.settings.accent.collectAsState()
             val spoken by app.settings.spoken.collectAsState()
             val googleKey by app.settings.googleKey.collectAsState()
@@ -294,6 +304,11 @@ class MainActivity : ComponentActivity() {
                 gearCount = gearCount,
                 gearRatios = gearRatios,
                 shiftHints = shiftHints,
+                roadLimits = roadLimits,
+                roadLights = roadLights,
+                roadCameras = roadCameras,
+                roadZones = roadZones,
+                cameraVoice = cameraVoice,
                 accent = accent,
                 spoken = spoken,
                 googleKey = googleKey,

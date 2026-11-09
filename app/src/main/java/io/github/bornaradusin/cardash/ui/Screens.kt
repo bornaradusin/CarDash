@@ -186,9 +186,15 @@ data class DashState(
     /** Rolling at tickover: clutch down or out of gear. */
     val rolling: Boolean = false,
     /** Where the change up / down signs come up, gear by gear (1st first). */
-    val shiftUpAt: List<Int> = Settings.SHIFT_UP_DEFAULT,
-    val shiftDownAt: List<Int> = Settings.SHIFT_DOWN_DEFAULT,
+    val shiftUpAt: List<Int> = Settings.SHIFT_UP_DIESEL,
+    val shiftDownAt: List<Int> = Settings.SHIFT_DOWN_DIESEL,
     val shiftHints: Boolean,
+    /** Settings › Navigation › On the road: the speed limit sign, traffic lights, speed cameras. */
+    val roadLimits: Boolean = true,
+    val roadLights: Boolean = true,
+    val roadCameras: Boolean = true,
+    val roadZones: Boolean = true,
+    val cameraVoice: Boolean = true,
     /** The accent colour, ARGB. */
     val accent: Int,
     val spoken: Boolean,
@@ -244,6 +250,11 @@ class DashActions(
     val setTopGear: (Float) -> Unit,
     val setGearCount: (Int) -> Unit,
     val setShiftHints: (Boolean) -> Unit,
+    val setRoadLimits: (Boolean) -> Unit,
+    val setRoadLights: (Boolean) -> Unit,
+    val setRoadCameras: (Boolean) -> Unit,
+    val setRoadZones: (Boolean) -> Unit,
+    val setCameraVoice: (Boolean) -> Unit,
     val setShiftUpAt: (gear: Int, rpm: Int) -> Unit,
     val setShiftDownAt: (gear: Int, rpm: Int) -> Unit,
     val resetShiftPoints: () -> Unit,
@@ -436,7 +447,32 @@ fun CarDash(state: DashState, actions: DashActions) {
     val speedy = state.speedWarnOn && (state.obd.readings.speedKmh ?: 0f) > state.speedWarnKmh - 5
     if (state.shiftWarnOn && !speedy) ShiftWarning(state.obd.readings.rpm, state.obd.readings.speedKmh, state.shiftWarnRpm, state.topGear, actions.setTopGear)
     if (state.speedWarnOn) SpeedWarning(state.obd.readings.speedKmh, state.speedWarnKmh)
+    // A camera (red) or speed van zone (orange) 1 km ahead: over everything for a few seconds
+    state.nav.alert?.let { RoadAlertWarning(it) }
 }
+
+/** The camera or zone warning across the whole screen, for 3 seconds from when it went off; then the sign in the header. */
+@Composable
+private fun RoadAlertWarning(a: io.github.bornaradusin.cardash.nav.RoadAlert) {
+    var showing by remember(a.at) { mutableStateOf(System.currentTimeMillis() - a.at < ALERT_MS) }
+    LaunchedEffect(a.at) {
+        val left = ALERT_MS - (System.currentTimeMillis() - a.at)
+        if (left > 0) {
+            delay(left)
+        }
+        showing = false
+    }
+    if (!showing) return
+    val distance = if (a.metres >= 1_000) "%.1f".format(Locale.UK, a.metres / 1000.0) to "km" else "${a.metres}" to "m"
+    when {
+        a.camera -> ScreenWarning("SPEED CAMERA", distance.first, "${distance.second} ahead" + (a.kmh?.let { " · $it" } ?: ""), C.red)
+        a.inside -> ScreenWarning("SPEED VAN ZONE", distance.first, "${distance.second} left", ORANGE)
+        else -> ScreenWarning("SPEED VAN ZONE", distance.first, "${distance.second} ahead", ORANGE)
+    }
+}
+
+private const val ALERT_MS = 3_000L
+private val ORANGE = Color(0xFFFF8A00)
 
 /** CarDash isn't the radio's home app: the Home button and starting the radio open another one. */
 internal fun missingPermissions(state: DashState) = !state.nav.permission || !state.hasNotifications || !state.isHomeApp
@@ -486,8 +522,8 @@ private fun SpeedWarning(speedKmh: Float?, overKmh: Int) {
 }
 
 /**
- * "Shift up" across the whole screen while the engine is over [atRpm] (for most of a second, so a
- * gear change doesn't flash it), going once it's 300 rpm under. Not in top gear: CarDash learns
+ * "Shift up" across the whole screen as soon as the engine reaches [atRpm], flashing until it's
+ * 100 rpm under. Not in top gear: CarDash learns
  * top gear's rpm per km/h as the lowest steady figure it sees driving over 50 km/h, and keeps it.
  */
 @Composable
@@ -511,18 +547,13 @@ private fun ShiftWarning(rpm: Float?, speedKmh: Float?, atRpm: Int, topGear: Flo
         }
     }
     val showing = remember { booleanArrayOf(false) }
-    val above = remember { longArrayOf(0L) }
     val r = rpm
     val v = speedKmh
     val inTop = r != null && v != null && v > 0f && topGear > 0f && r / v <= topGear * 1.06f
-    val now = System.currentTimeMillis()
     showing[0] = when {
-        r == null || v == null || v < 5f || inTop -> false.also { above[0] = 0L }
-        r >= atRpm -> {
-            if (above[0] == 0L) above[0] = now
-            showing[0] || now - above[0] > 700
-        }
-        r < atRpm - 300 -> false.also { above[0] = 0L }
+        r == null || v == null || v < 5f || inTop -> false
+        r >= atRpm -> true
+        r < atRpm - 100 -> false
         else -> showing[0]
     }
     if (!showing[0]) return
@@ -537,7 +568,7 @@ private class Steady {
 
 /** A warning across the whole screen: the band in the middle, the red around it pulsing twice a second. */
 @Composable
-private fun ScreenWarning(title: String, figure: String, unit: String) {
+private fun ScreenWarning(title: String, figure: String, unit: String, color: Color = C.red) {
     // The red above and below the band pulses twice a second for as long as it's showing
     val flash by rememberInfiniteTransition(label = "warning").animateFloat(
         initialValue = 0.35f, targetValue = 1f,
@@ -545,20 +576,20 @@ private fun ScreenWarning(title: String, figure: String, unit: String) {
         label = "flash",
     )
     Box(Modifier.size(1280.dp, 720.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.matchParentSize().graphicsLayer { alpha = flash }.background(C.red.copy(alpha = 0.34f)).border(6.dp, C.red))
+        Box(Modifier.matchParentSize().graphicsLayer { alpha = flash }.background(color.copy(alpha = 0.34f)).border(6.dp, color))
         Column(
             Modifier.fillMaxWidth().height(278.dp),
         ) {
-            Box(Modifier.fillMaxWidth().height(3.dp).graphicsLayer { alpha = flash }.background(C.red))
+            Box(Modifier.fillMaxWidth().height(3.dp).graphicsLayer { alpha = flash }.background(color))
             Column(
                 Modifier.fillMaxWidth().weight(1f).background(Color(0xE6080305)),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
             ) {
                 Text(
-                    title, color = C.red, fontSize = 96.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
+                    title, color = color, fontSize = 96.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic,
                     letterSpacing = 2.sp, maxLines = 1,
-                    style = TextStyle(shadow = Shadow(C.red.copy(alpha = 0.6f), blurRadius = 28f)),
+                    style = TextStyle(shadow = Shadow(color.copy(alpha = 0.6f), blurRadius = 28f)),
                 )
                 // The figure dead centre, the unit hanging off its right
                 Box {
@@ -574,7 +605,7 @@ private fun ScreenWarning(title: String, figure: String, unit: String) {
                     )
                 }
             }
-            Box(Modifier.fillMaxWidth().height(3.dp).graphicsLayer { alpha = flash }.background(C.red))
+            Box(Modifier.fillMaxWidth().height(3.dp).graphicsLayer { alpha = flash }.background(color))
         }
     }
 }
@@ -598,6 +629,25 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
             Row(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onName).padding(horizontal = 4.dp, vertical = 6.dp)) {
                 Text(state.name, color = C.ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
                 Text(" //", color = C.red, fontSize = 24.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+            }
+            // A speed camera ahead, else a speed van zone ahead or the one you're in: up here it's on every
+            // page and covers nothing
+            val cam = state.nav.cameraAheadM
+            val zoneIn = state.nav.zoneLeftM
+            val zoneAhead = state.nav.zoneAheadM
+            when {
+                cam != null -> {
+                    Spacer(Modifier.width(18.dp))
+                    CameraAhead(cam, state.nav.cameraKmh, state.obd.readings.speedKmh ?: (state.nav.speed * 3.6f))
+                }
+                zoneIn != null -> {
+                    Spacer(Modifier.width(18.dp))
+                    ZoneSign(zoneIn, inside = true)
+                }
+                zoneAhead != null -> {
+                    Spacer(Modifier.width(18.dp))
+                    ZoneSign(zoneAhead, inside = false)
+                }
             }
         }
         // Time, date and the page dots side by side
@@ -639,16 +689,15 @@ private fun Header(state: DashState, page: Int?, onPage: (Int) -> Unit, onName: 
 }
 
 /**
- * When to change gear in the TT's 2.0 TDI for fuel economy without lugging the dual-mass flywheel.
- * Its 350 Nm comes between 1,750 and 2,500 rpm: change up at 2,000 (2,500 when pulling hard, pedal
- * past half) so the next gear lands back on that plateau, but never into fewer than 1,500 rpm; change
- * down under 1,300 rpm with the foot down, or under 1,100 rpm at all, which is where a diesel
- * starts to judder and the flywheel takes the strain. Up is +1, down -1, with the gear to go to
- * once CarDash has learnt the gears (null before that).
+ * When to change gear for fuel economy, at the points set in Settings › Driving gear by gear (the
+ * suggested ones follow diesel or petrol, Settings › Car › Fuel use: see [Settings.SHIFT_UP_DIESEL]).
+ * Change up waits 500 rpm more with the pedal past half; change down comes 200 rpm sooner with the
+ * foot well down. Up is +1, down -1, with the gear to go to once CarDash has learnt the gears (null
+ * before that).
  */
 internal fun shiftHint(
     rpm: Float?, kmh: Float?, pedal: Float?, gear: Int?, ratios: List<Float>, rolling: Boolean = false,
-    upAt: List<Int> = Settings.SHIFT_UP_DEFAULT, downAt: List<Int> = Settings.SHIFT_DOWN_DEFAULT,
+    upAt: List<Int> = Settings.SHIFT_UP_DIESEL, downAt: List<Int> = Settings.SHIFT_DOWN_DIESEL,
 ): Pair<Int, Int?>? {
     if (rpm == null || kmh == null || kmh < 5f) return null
     // Rolling at tickover, clutch down or out of gear: nothing to change
@@ -664,9 +713,9 @@ internal fun shiftHint(
     // nothing to change down for
     val offPedal = pedal != null && pedal < 5f
     if (!known) {
-        // Not learnt yet, so no gear: the rpm alone, the points for the middle gears
-        if (rpm >= 2000f + upExtra) return 1 to null
-        if (!offPedal && kmh >= 20f && rpm < 1100f + downExtra) return -1 to null
+        // Not learnt yet, so no gear: the rpm alone, 3rd gear's points
+        if (rpm >= (upAt.getOrNull(2) ?: 2000) + upExtra) return 1 to null
+        if (!offPedal && kmh >= 20f && rpm < (downAt.getOrNull(2) ?: 1100) + downExtra) return -1 to null
         return null
     }
     val g = gear ?: return null
@@ -1590,7 +1639,7 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                             )
                             ShiftPointsCard(state, actions)
                         }
-                        SettingsSection.NAVIGATION -> TwoColumns({ NavigationCard(state, actions) }, { OfflineMapCard(state, actions) })
+                        SettingsSection.NAVIGATION -> TwoColumns({ NavigationCard(state, actions); RoadCard(state, actions) }, { OfflineMapCard(state, actions) })
                         SettingsSection.CAR -> TwoColumns({ ObdCard(state, actions); FuelCard(state, actions) }, { CanCard(state, actions) })
                         SettingsSection.LOOK -> TwoColumns({ AccentCard(state, actions) }, { NameCard(state, actions); ScreenCard(state, actions) })
                         SettingsSection.MUSIC -> TwoColumns({ MusicCard(state, actions) }, { })
@@ -1884,7 +1933,11 @@ private fun ShiftPointsCard(state: DashState, actions: DashActions) {
             }
             for (g in 1..state.gearCount) ShiftPointRow(g, state, actions)
             if (state.gearRatios.isEmpty()) Text("The speeds show once CarDash has learnt the gears.", color = C.muted, fontSize = 13.sp)
-            Wide("Back to the suggested points") { actions.resetShiftPoints() }
+            Text(
+                "Suggested for a ${if (state.diesel) "diesel" else "petrol"} engine (Settings › Car › Fuel use). Each kind keeps its own points.",
+                color = C.muted, fontSize = 13.sp,
+            )
+            Wide("Back to the suggested points for a ${if (state.diesel) "diesel" else "petrol"}") { actions.resetShiftPoints() }
         }
     }
 }

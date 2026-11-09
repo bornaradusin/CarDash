@@ -63,6 +63,8 @@ object Ic {
     val minus = icon("minus", "M5 12h14")
     val back = icon("back", "M15 18l-6-6 6-6")
     val close = icon("close", "M6 6l12 12", "M18 6L6 18")
+    /** A speed van: for GoSafe zones. */
+    val van = icon("van", "M2 16V7a1 1 0 0 1 1-1h11l4 4h3a1 1 0 0 1 1 1v5", "M2 16h20", circle(6.5f, 17.5f, 2f), circle(17f, 17.5f, 2f), circle(7.5f, 10.5f, 2f))
 
     // Navigation
     val search = icon("search", circle(10.5f, 10.5f, 6.5f), "M15.5 15.5L21 21")

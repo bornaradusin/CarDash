@@ -346,9 +346,9 @@ internal fun MapPanel(state: DashState, actions: DashActions, onSearch: () -> Un
             }
         }
         // The speed limit on the road you're on, red inside once you're over it
+        val kmhNow = state.obd.readings.speedKmh ?: (nav.speed * 3.6f)
         nav.limit?.let { limit ->
-            val kmh = state.obd.readings.speedKmh ?: (nav.speed * 3.6f)
-            SpeedSign(limit, kmh > limit + 2, Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 12.dp))
+            SpeedSign(limit, kmhNow > limit + 2, Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 12.dp))
         }
     }
 }
@@ -466,6 +466,41 @@ internal fun LightsAhead(m: Int, modifier: Modifier = Modifier) {
             Text("$m m", color = C.ink, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             Text("lights ahead", color = C.muted, fontSize = 12.sp)
         }
+    }
+}
+
+/** A speed camera ahead, on one line for the header: the camera, how far, and the limit it checks when known (red once you're over that). */
+@Composable
+internal fun CameraAhead(m: Int, kmh: Int?, speed: Float, modifier: Modifier = Modifier) {
+    val over = kmh != null && speed > kmh + 2
+    val amber = Color(0xFFFFB020)
+    Row(
+        modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF14171D))
+            .border(1.5.dp, if (over) C.red else amber, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Ic.camera, "Speed camera", tint = if (over) C.red else amber, modifier = Modifier.size(24.dp))
+        Text("$m m", color = C.ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(if (kmh != null) "camera · $kmh" else "speed camera", color = if (over) C.red else C.muted, fontSize = 14.sp, maxLines = 1)
+    }
+}
+
+/** A GoSafe speed van zone, on one line for the header: how far to it, or how much of it is left. */
+@Composable
+internal fun ZoneSign(m: Int, inside: Boolean, modifier: Modifier = Modifier) {
+    val orange = Color(0xFFFF8A00)
+    val dist = if (m >= 1_000) "%.1f km".format(java.util.Locale.UK, m / 1000.0) else "$m m"
+    Row(
+        modifier.height(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF14171D))
+            .border(1.5.dp, orange, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Ic.van, "Speed van zone", tint = orange, modifier = Modifier.size(26.dp))
+        Text(if (inside) "speed van zone" else "speed van zone in", color = C.muted, fontSize = 14.sp, maxLines = 1)
+        Text(dist, color = C.ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        if (inside) Text("left", color = C.muted, fontSize = 14.sp, maxLines = 1)
     }
 }
 
@@ -842,18 +877,29 @@ internal fun NavigationCard(state: DashState, actions: DashActions) {
         }
         if (editingKey) GoogleKeyDialog(state.googleKey, onSave = { actions.setGoogleKey(it); editingKey = false }, onDismiss = { editingKey = false })
         Text("Google Maps' turns show in the middle box while it navigates (needs notification access).", color = C.muted, fontSize = 14.sp)
-        // Where the speed limits and traffic lights stand: what came back, or why not
-        Column {
-            Text("Speed limits and traffic lights", color = C.ink, fontSize = 17.sp)
-            Text(
-                state.nav.roadsStatus ?: if (state.nav.located) "Asking OpenStreetMap…" else "Waiting for a GPS position",
-                color = if (state.nav.roadsStatus?.startsWith("Couldn't") == true) C.red else C.muted, fontSize = 14.sp, lineHeight = 20.sp,
-            )
-            Text(
-                "Shown on the main dash's top corners, the map dash and the maps, where OpenStreetMap has them: a road without a limit in OpenStreetMap shows none.",
-                color = C.muted, fontSize = 13.sp, lineHeight = 18.sp,
-            )
+    }
+}
+
+/** Speed limits, traffic lights and speed cameras: each switched on or off, and how getting them went. */
+@Composable
+internal fun RoadCard(state: DashState, actions: DashActions) {
+    Card("On the road") {
+        SwitchRow("Speed limits", "The limit sign on the main dash, the map dash and the maps", state.roadLimits, actions.setRoadLimits)
+        SwitchRow("Traffic lights", "On the maps, and how far the next ones are", state.roadLights, actions.setRoadLights)
+        SwitchRow("Speed cameras", "The screen flashes red 1 km before one, then how far it is, top left", state.roadCameras, actions.setRoadCameras)
+        if (state.roadCameras) {
+            SwitchRow("Say speed camera warnings", "\"Speed camera in 1 kilometre\", even with spoken directions off", state.cameraVoice, actions.setCameraVoice)
         }
+        SwitchRow("Speed van zones", "The Garda's GoSafe zones: the screen flashes orange 1 km before one, then how much is left", state.roadZones, actions.setRoadZones)
+        val any = state.roadLimits || state.roadLights || state.roadCameras || state.roadZones
+        val status = if (!any) "All of these are off"
+        else state.nav.roadsStatus ?: if (state.nav.located) "Getting the road data…" else "Waiting for a GPS position"
+        Text(status, color = if (status.startsWith("Couldn't")) C.red else C.muted, fontSize = 14.sp, lineHeight = 20.sp)
+        Text(
+            "From OpenStreetMap, with the zones and static cameras from the Garda: in Ireland, CarDash's own copy, updated every Monday and " +
+                "kept on the radio; elsewhere, OpenStreetMap's servers (no zones). A road without a limit there shows none.",
+            color = C.muted, fontSize = 13.sp, lineHeight = 18.sp,
+        )
     }
 }
 

@@ -47,7 +47,7 @@ The middle box switches to the map, tilted and turning with the car, the route i
 Swipe the middle box to **Directions** for the next turn big, the one after it, and **End route**.
 
 - **Spoken directions**: "In 300 metres, turn right onto Main Street", then again at the turn, in the radio's voice. The speaker button mutes them; tap it again for sound. Turn them off altogether in **Settings › Navigation**.
-- **Off the route**: CarDash plans a new one from where you are.
+- **Off the route**: about 3 seconds after you're more than 45 m off it, CarDash plans a new one from where you are (and says "Finding a new route"). It waits at least 5 seconds between new routes.
 - **There**: it says so and ends the route a few seconds later.
 
 ### Big map
@@ -56,11 +56,19 @@ The middle box's last view is the big map: the map takes the RPM dial's place to
 
 ![The big map on a route: the car takes the right turn and the map turns with it](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/big-map.gif)
 
-## Speed limits and traffic lights
+## Speed limits, traffic lights, speed cameras and speed van zones
 
-A round **speed-limit sign** shows the limit on the road you're on: top right on the main dash, by the speed on the map dash, and on the maps. It turns red inside once you're more than 2 km/h over. **Traffic lights** stand on the maps where they are, and the nearest set ahead of you (within 500 m) shows with its distance: top left on the main dash, and by the speed on the map dash. Both come from OpenStreetMap (the Overpass API), fetched for 1.5 km around you as you drive. Where a road has no limit in OpenStreetMap, the sign just doesn't show.
+A round **speed-limit sign** shows the limit on the road you're on: top right on the main dash, by the speed on the map dash, and on the maps. It turns red inside once you're more than 2 km/h over. **Traffic lights** stand on the maps where they are, and the nearest set ahead of you (within 500 m) shows with its distance: top left on the main dash, and by the speed on the map dash. **Speed cameras**: 1 km before one, the whole screen flashes red for 3 seconds with **SPEED CAMERA** and how far, in the same style as the speed warning, and CarDash says "Speed camera in 1 kilometre" (with the limit, when known). After that the camera stays at the top left, next to CarDash's name, with its distance and limit, on every page and on the map dash; it goes red if you're over that limit. The cameras are the ones mapped in OpenStreetMap and the Garda's static cameras.
 
-**Settings › Navigation › Speed limits and traffic lights** says how the last try went: how many roads with limits and traffic lights it got, or why it got none (the servers busy or unreachable, with the error from each). If nothing ever shows, that line says why.
+**Speed van zones**: the Garda's GoSafe zones, the stretches of road the speed vans work on (a van can be anywhere along one). 1 km before one, the screen flashes orange for 3 seconds with **SPEED VAN ZONE** and how far; while you're in it, the top left shows how much of it is left. Joining one partway (from a side road), it flashes as you enter. There's no live feed of where the vans are on the day: the zones are every place one can be. Garda vans and speed guns outside the zones aren't known.
+
+Each warning goes off once, then not again for the same camera or zone for 10 minutes.
+
+Each can be turned off on its own in **Settings › Navigation › On the road**: **Speed limits**, **Traffic lights**, **Speed cameras** (and **Say speed camera warnings**, which works even with spoken directions off), **Speed van zones**.
+
+Limits, lights and cameras come from OpenStreetMap; the zones and static cameras from the Garda's own files for sat navs. In Ireland and Northern Ireland, CarDash has its own copy of all of it, rebuilt every Monday: the radio downloads the squares (about 5 km a side) around you as you drive, a few KB each, and keeps them for a week, so roads you drive often work with no signal. Anywhere else limits, lights and cameras come from OpenStreetMap's public servers (Overpass), with no zones, which are often busy: CarDash asks one, then the next a few seconds later, and keeps what it gets the same way. Where a road has no limit in OpenStreetMap, the sign just doesn't show; cameras are the ones mapped in OpenStreetMap.
+
+The line under the switches says what's loaded around you (how many roads with a limit, traffic lights and cameras, and where they came from), or why it couldn't get them. If nothing ever shows, that line says why.
 
 The roads are drawn lighter than the dark map, with white edges, so they stand out at a glance, and the buildings stand on the streets in 3D.
 
@@ -91,13 +99,14 @@ Searching and planning a new route still need the internet; a route you've alrea
 ## What it needs
 
 - **Location**: CarDash asks the first time the map or Where to? opens. Allow it in **Settings › Permissions** if you said no.
-- **Internet** for the map (unless the area is saved), the search, new routes, and speed limits and traffic lights.
+- **Internet** for the map (unless the area is saved), the search, new routes, and the speed limits, traffic lights and cameras (the first time through an area each week).
 
 ## Where the data comes from
 
 - The map: [OpenFreeMap](https://openfreemap.org), from OpenStreetMap
 - The search: [Photon](https://photon.komoot.io) by Komoot, from OpenStreetMap
 - The routes: [OSRM](https://project-osrm.org) on the OpenStreetMap community's server
-- Speed limits and traffic lights: the [Overpass API](https://overpass-api.de)
+- Speed limits, traffic lights and speed cameras: [OpenStreetMap](https://www.openstreetmap.org/copyright) (Ireland's from [Geofabrik](https://download.geofabrik.de)'s extract, elsewhere through the [Overpass API](https://overpass-api.de))
+- Speed van zones and static cameras: [An Garda Síochána](https://www.garda.ie/en/roads-policing/safety-cameras-save-lives/mobile-safety-camera-detection/)
 
 All free and without accounts. Map data © OpenStreetMap contributors.

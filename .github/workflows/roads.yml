@@ -1,0 +1,54 @@
+# Builds CarDash's road data (speed limits, traffic lights and speed cameras) for Ireland and
+# Northern Ireland from OpenStreetMap, with the Garda's GoSafe speed van zones and static cameras,
+# every Monday, and puts it on the "roads" branch. The app
+# downloads the squares around the car from there and keeps them, so it doesn't depend on the busy
+# public Overpass servers (it still uses them outside Ireland). Run it by hand from Actions → Roads.
+name: Roads
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q osmium-tool
+          pip install -q osmium
+      - name: OpenStreetMap for Ireland and Northern Ireland
+        run: curl -fsSL --retry 3 -o ie.osm.pbf https://download.geofabrik.de/europe/ireland-and-northern-ireland-latest.osm.pbf
+      - name: Just the roads with a limit, the lights and the cameras
+        run: osmium tags-filter ie.osm.pbf w/maxspeed n/highway=traffic_signals,speed_camera -o roads.osm.pbf
+      - name: The Garda's GoSafe zones and static cameras
+        # Their files "for updating sat nav": current, new and community-request zones, and the map of
+        # static cameras. One that won't download is left out rather than stopping the rest.
+        run: |
+          mkdir -p garda
+          get() { curl -fsSL --retry 3 -A "Mozilla/5.0 (CarDash road data; github.com/bornaradusin/CarDash)" -o "garda/$1" "$2" || echo "Couldn't get $1"; }
+          get current.kmz 'https://www.garda.ie/!Y550A6'
+          get new.kmz 'https://www.garda.ie/!93CIKV'
+          get community.kmz 'https://www.garda.ie/!W0I1JK'
+          get static.kml 'https://www.google.com/maps/d/kml?mid=1XQMShI03qxhxcaGilYbGSZ1guBtmWqA&forcekml=1'
+          ls -la garda
+      - name: Squares
+        run: python3 tools/roads/build_tiles.py roads.osm.pbf out garda
+      - name: Publish to the roads branch
+        run: |
+          cd out
+          git init -q -b roads
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Road data $(date -u +%F)"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" roads

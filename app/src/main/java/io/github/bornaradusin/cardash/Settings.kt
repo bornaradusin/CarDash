@@ -53,6 +53,9 @@ class Settings(context: Context) {
     fun setDiesel(v: Boolean) {
         sp.edit().putBoolean("diesel", v).apply()
         _diesel.value = v
+        // The change points are kept for each kind of engine: the other kind's come back
+        _shiftUpAt.value = points(upKey(v), shiftUpDefault(v))
+        _shiftDownAt.value = points(downKey(v), shiftDownDefault(v))
     }
 
     var dieselQ0: Float
@@ -138,40 +141,99 @@ class Settings(context: Context) {
         _shiftHints.value = v
     }
 
+    private val _roadLimits = MutableStateFlow(sp.getBoolean("roadLimits", true))
+    /** The speed limit sign, from OpenStreetMap. */
+    val roadLimits: StateFlow<Boolean> = _roadLimits
+
+    fun setRoadLimits(v: Boolean) {
+        sp.edit().putBoolean("roadLimits", v).apply()
+        _roadLimits.value = v
+    }
+
+    private val _roadLights = MutableStateFlow(sp.getBoolean("roadLights", true))
+    /** Traffic lights on the map and the distance to the next ones. */
+    val roadLights: StateFlow<Boolean> = _roadLights
+
+    fun setRoadLights(v: Boolean) {
+        sp.edit().putBoolean("roadLights", v).apply()
+        _roadLights.value = v
+    }
+
+    private val _roadCameras = MutableStateFlow(sp.getBoolean("roadCameras", true))
+    /** The speed camera sign and "Speed camera ahead". */
+    val roadCameras: StateFlow<Boolean> = _roadCameras
+
+    fun setRoadCameras(v: Boolean) {
+        sp.edit().putBoolean("roadCameras", v).apply()
+        _roadCameras.value = v
+    }
+
     private fun points(key: String, default: List<Int>): List<Int> {
         val saved = sp.getString(key, null)?.split(',')?.map { it.toIntOrNull() } ?: return default
         return default.mapIndexed { i, d -> saved.getOrNull(i) ?: d }
     }
 
-    private val _shiftUpAt = MutableStateFlow(points("shiftUpAt", SHIFT_UP_DEFAULT))
-    /** The change-up sign, gear by gear (1st first): the rpm it comes up at. */
+    private val _roadZones = MutableStateFlow(sp.getBoolean("roadZones", true))
+    /** The Garda's GoSafe speed van zones: the sign, and the orange flash 1 km before one. */
+    val roadZones: StateFlow<Boolean> = _roadZones
+
+    fun setRoadZones(v: Boolean) {
+        sp.edit().putBoolean("roadZones", v).apply()
+        _roadZones.value = v
+    }
+
+    private val _cameraVoice = MutableStateFlow(sp.getBoolean("cameraVoice", true))
+    /** "Speed camera in 1 kilometre" out loud, whether or not spoken directions are on. */
+    val cameraVoice: StateFlow<Boolean> = _cameraVoice
+
+    fun setCameraVoice(v: Boolean) {
+        sp.edit().putBoolean("cameraVoice", v).apply()
+        _cameraVoice.value = v
+    }
+
+    private fun upKey(diesel: Boolean) = if (diesel) "shiftUpAt.diesel" else "shiftUpAt.petrol"
+    private fun downKey(diesel: Boolean) = if (diesel) "shiftDownAt.diesel" else "shiftDownAt.petrol"
+
+    /** Points set before they were kept per engine: they were set for the engine picked now. */
+    private fun movedShiftPoints(): Boolean {
+        val d = _diesel.value
+        val e = sp.edit()
+        sp.getString("shiftUpAt", null)?.let { e.putString(upKey(d), it).remove("shiftUpAt") }
+        sp.getString("shiftDownAt", null)?.let { e.putString(downKey(d), it).remove("shiftDownAt") }
+        e.apply()
+        return true
+    }
+
+    private val _shiftUpAt = MutableStateFlow(movedShiftPoints().let { points(upKey(_diesel.value), shiftUpDefault(_diesel.value)) })
+    /** The change-up sign, gear by gear (1st first): the rpm it comes up at, for the kind of engine picked. */
     val shiftUpAt: StateFlow<List<Int>> = _shiftUpAt
 
-    private val _shiftDownAt = MutableStateFlow(points("shiftDownAt", SHIFT_DOWN_DEFAULT))
+    private val _shiftDownAt = MutableStateFlow(points(downKey(_diesel.value), shiftDownDefault(_diesel.value)))
     /** The change-down sign, gear by gear (1st first, which has none): the rpm it comes up under. */
     val shiftDownAt: StateFlow<List<Int>> = _shiftDownAt
 
     fun setShiftUpAt(gear: Int, rpm: Int) {
-        if (gear !in 1..SHIFT_UP_DEFAULT.size) return
+        if (gear !in 1..SHIFT_UP_DIESEL.size) return
         val r = (rpm / SHIFT_POINT_STEP * SHIFT_POINT_STEP).coerceIn(SHIFT_UP_MIN, SHIFT_UP_MAX)
         val list = _shiftUpAt.value.toMutableList().also { it[gear - 1] = r }
-        sp.edit().putString("shiftUpAt", list.joinToString(",")).apply()
+        sp.edit().putString(upKey(_diesel.value), list.joinToString(",")).apply()
         _shiftUpAt.value = list
     }
 
     fun setShiftDownAt(gear: Int, rpm: Int) {
-        if (gear !in 2..SHIFT_DOWN_DEFAULT.size) return
+        if (gear !in 2..SHIFT_DOWN_DIESEL.size) return
         val r = (rpm / SHIFT_POINT_STEP * SHIFT_POINT_STEP).coerceIn(SHIFT_DOWN_MIN, SHIFT_DOWN_MAX)
         val list = _shiftDownAt.value.toMutableList().also { it[gear - 1] = r }
-        sp.edit().putString("shiftDownAt", list.joinToString(",")).apply()
+        sp.edit().putString(downKey(_diesel.value), list.joinToString(",")).apply()
         _shiftDownAt.value = list
     }
 
-    /** Back to the points suggested for the TT's 2.0 TDI. */
+    /** Back to the points suggested for the kind of engine picked (Settings › Car › Fuel use). */
     fun resetShiftPoints() {
-        sp.edit().remove("shiftUpAt").remove("shiftDownAt").apply()
-        _shiftUpAt.value = SHIFT_UP_DEFAULT
-        _shiftDownAt.value = SHIFT_DOWN_DEFAULT
+        val d = _diesel.value
+        sp.edit().remove(upKey(d)).remove(downKey(d)).apply()
+        _shiftUpAt.value = shiftUpDefault(d)
+        _shiftDownAt.value = shiftDownDefault(d)
     }
 
     private val _topGear = MutableStateFlow(sp.getFloat("topGearRpmPerKmh", 0f))
@@ -231,8 +293,18 @@ class Settings(context: Context) {
          * later in the low gears so the next one doesn't land under 1,500; change down under 1,100,
          * where a diesel judders and the dual-mass flywheel takes the strain. Up to 8 gears.
          */
-        val SHIFT_UP_DEFAULT = listOf(2700, 2300, 2100, 2000, 2000, 2000, 2000, 2000)
-        val SHIFT_DOWN_DEFAULT = listOf(0, 1100, 1100, 1100, 1100, 1100, 1100, 1100)
+        /**
+         * Where to change gear for economy, gear by gear. A diesel pulls from low down (the TT's 2.0 TDI
+         * has its 350 Nm from 1,750 rpm): change up early, but each change landing no lower than about
+         * 1,300 rpm in the next gear, and down under 1,100, where it starts to judder and the dual-mass
+         * flywheel takes the strain. A petrol needs more revs: up around 2,500 to 3,000, down under 1,400.
+         */
+        val SHIFT_UP_DIESEL = listOf(2400, 2000, 1900, 1800, 1800, 1800, 1800, 1800)
+        val SHIFT_DOWN_DIESEL = listOf(0, 1100, 1100, 1100, 1100, 1100, 1100, 1100)
+        val SHIFT_UP_PETROL = listOf(3000, 2800, 2600, 2500, 2500, 2500, 2500, 2500)
+        val SHIFT_DOWN_PETROL = listOf(0, 1400, 1400, 1400, 1400, 1400, 1400, 1400)
+        fun shiftUpDefault(diesel: Boolean) = if (diesel) SHIFT_UP_DIESEL else SHIFT_UP_PETROL
+        fun shiftDownDefault(diesel: Boolean) = if (diesel) SHIFT_DOWN_DIESEL else SHIFT_DOWN_PETROL
         const val SHIFT_POINT_STEP = 100
         const val SHIFT_UP_MIN = 1200
         const val SHIFT_UP_MAX = 4500

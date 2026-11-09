@@ -10,10 +10,14 @@ name: Build
 
 on:
   push:
+    branches-ignore:
+      - "roads"
     paths-ignore:
       - "README.md"
       - "wiki/**"
+      - "tools/roads/**"
       - ".github/workflows/wiki.yml"
+      - ".github/workflows/roads.yml"
   workflow_dispatch:
 
 permissions:

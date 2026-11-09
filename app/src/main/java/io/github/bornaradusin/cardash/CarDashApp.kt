@@ -10,6 +10,7 @@ import io.github.bornaradusin.cardash.car.ServiceBook
 import io.github.bornaradusin.cardash.car.canValues
 import io.github.bornaradusin.cardash.car.effectivePicks
 import io.github.bornaradusin.cardash.nav.Navigator
+import io.github.bornaradusin.cardash.nav.RoadSwitches
 import io.github.bornaradusin.cardash.nav.OfflineMaps
 import io.github.bornaradusin.cardash.nav.Places
 import io.github.bornaradusin.cardash.obd.Gears
@@ -38,7 +39,14 @@ class CarDashApp : Application() {
     val service: ServiceBook by lazy { ServiceBook(this, settings.diesel.value) }
 
     /** CarDash's own navigation: GPS, routes, directions. */
-    val nav: Navigator by lazy { Navigator(this) { settings.spoken.value } }
+    val nav: Navigator by lazy {
+        Navigator(this, { settings.spoken.value }) {
+            RoadSwitches(
+                settings.roadLimits.value, settings.roadLights.value, settings.roadCameras.value,
+                zones = settings.roadZones.value, cameraVoice = settings.cameraVoice.value,
+            )
+        }
+    }
 
     /** Home, Work and recent places. */
     val places: Places by lazy { Places(this) }
