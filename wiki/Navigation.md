@@ -68,7 +68,7 @@ Each can be turned off on its own in **Settings › Navigation › On the road**
 
 Limits, lights and cameras come from OpenStreetMap; the zones and static cameras from the Garda's own files for sat navs. In Ireland and Northern Ireland, CarDash has its own copy of all of it, rebuilt every Monday: the radio downloads the squares (about 5 km a side) around you as you drive, up to about 60 KB each in a city, and keeps them for a week, so roads you drive often work with no signal. Anywhere else limits, lights and cameras come from OpenStreetMap's public servers (Overpass), with no zones, which are often busy: CarDash asks one, then the next a few seconds later, and keeps what it gets the same way. Where a road has no limit in OpenStreetMap, the sign just doesn't show; cameras are the ones mapped in OpenStreetMap.
 
-The line under the switches says what's loaded around you (how many roads with a limit, traffic lights and cameras, and where they came from), or why it couldn't get them. If nothing ever shows, that line says why.
+The top of the **On the road** card says whether the road data is loaded around you: a green dot and **Road data loaded around you** (with how many roads with a limit, traffic lights, cameras and zones, and where they came from), amber while it's loading, red with the reason if it couldn't get it. Under that it says what the road you're on has: its limit, or that it has none in the data and how far the nearest road with one is. **Load again** throws away what's kept and fetches it fresh. If nothing ever shows on the dash, this says why.
 
 The roads are drawn lighter than the dark map, with white edges, so they stand out at a glance, and the buildings stand on the streets in 3D.
 

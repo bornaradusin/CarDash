@@ -371,8 +371,8 @@ internal fun MapDash(state: DashState, actions: DashActions, openSearch: () -> U
     Box(modifier.fillMaxSize()) {
         // Moved with a finger and zoomed with two, in the middle and on the right
         NavMap(nav, Modifier.fillMaxSize(), interactive = true)
-        // The left of the screen is for swiping: up or down to the main dash, sideways between the pages.
-        // The map doesn't get touches there
+        // The left of the screen is for swiping up or down to the main dash: the map doesn't get touches
+        // there. The pages don't swipe sideways from the map dash at all, so the map has all of it
         Box(Modifier.width(LEFT_SWIPE).fillMaxHeight().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } })
         // Top left: the next turn and the one after, or what's happening
         Box(Modifier.align(Alignment.TopStart).padding(16.dp).widthIn(max = 380.dp)) {
@@ -885,10 +885,44 @@ internal fun NavigationCard(state: DashState, actions: DashActions) {
     }
 }
 
-/** Speed limits, traffic lights and speed cameras: each switched on or off, and how getting them went. */
+/**
+ * Speed limits, traffic lights, speed cameras and speed van zones: first whether the road data is
+ * loaded round the car (and what the road you're on has), then each switched on or off.
+ */
 @Composable
 internal fun RoadCard(state: DashState, actions: DashActions) {
+    val nav = state.nav
+    val any = state.roadLimits || state.roadLights || state.roadCameras || state.roadZones
     Card("On the road") {
+        val green = Color(0xFF2ED47A)
+        val amber = Color(0xFFFFB020)
+        val (dot, head) = when {
+            !any -> C.muted to "All of these are off"
+            !nav.located -> C.muted to "Waiting for a GPS position"
+            nav.roadsSquares > 0 -> green to "Road data loaded around you"
+            nav.roadsFailed && !nav.roadsLoading -> C.red to "Road data not loaded"
+            else -> amber to "Loading the road data…"
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(12.dp).clip(CircleShape).background(dot))
+            Text(head, color = C.ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            if (any && nav.located) SmallButton("Load again") { actions.reloadRoads() }
+        }
+        nav.roadsStatus?.takeIf { any }?.let {
+            Text(it, color = if (nav.roadsFailed) C.red else C.muted, fontSize = 14.sp, lineHeight = 20.sp)
+        }
+        // What the road you're on has: tells "no limit on this road" from "nothing loaded"
+        if (state.roadLimits && nav.roadsSquares > 0) {
+            val near = nav.nearestLimit
+            Text(
+                when {
+                    nav.limit != null -> "On this road: ${nav.limit} km/h"
+                    near != null -> "This road has no limit in the data. The nearest road with one (${near.first} km/h) is ${near.second} m away."
+                    else -> "No road with a limit within 1 km in the data."
+                },
+                color = C.ink2, fontSize = 15.sp, lineHeight = 21.sp,
+            )
+        }
         SwitchRow("Speed limits", "The limit sign on the main dash, the map dash and the maps", state.roadLimits, actions.setRoadLimits)
         SwitchRow("Traffic lights", "On the maps, and how far the next ones are", state.roadLights, actions.setRoadLights)
         SwitchRow("Speed cameras", "The screen flashes red 1 km before one, then how far it is, top left", state.roadCameras, actions.setRoadCameras)
@@ -896,10 +930,6 @@ internal fun RoadCard(state: DashState, actions: DashActions) {
             SwitchRow("Say speed camera warnings", "\"Speed camera in 1 kilometre\", even with spoken directions off", state.cameraVoice, actions.setCameraVoice)
         }
         SwitchRow("Speed van zones", "The Garda's GoSafe zones: the screen flashes orange 1 km before one, then how much is left", state.roadZones, actions.setRoadZones)
-        val any = state.roadLimits || state.roadLights || state.roadCameras || state.roadZones
-        val status = if (!any) "All of these are off"
-        else state.nav.roadsStatus ?: if (state.nav.located) "Getting the road data…" else "Waiting for a GPS position"
-        Text(status, color = if (status.startsWith("Couldn't")) C.red else C.muted, fontSize = 14.sp, lineHeight = 20.sp)
         Text(
             "From OpenStreetMap, with the zones and static cameras from the Garda: in Ireland, CarDash's own copy, updated every Monday and " +
                 "kept on the radio; elsewhere, OpenStreetMap's servers (no zones). A road without a limit there shows none.",

@@ -60,6 +60,14 @@ data class NavState(
     val alert: RoadAlert? = null,
     /** How getting the speed limits, traffic lights and cameras went, for Settings: what came back, or why not. */
     val roadsStatus: String? = null,
+    /** Fetching a square of road data now. */
+    val roadsLoading: Boolean = false,
+    /** The last try failed (the reason is in [roadsStatus]). */
+    val roadsFailed: Boolean = false,
+    /** Squares of road data around the car, loaded. */
+    val roadsSquares: Int = 0,
+    /** The nearest road with a limit in the data, within 1 km: its limit and how far (for Settings, to tell "no limit on this road" from "nothing loaded"). */
+    val nearestLimit: Pair<Int, Int>? = null,
     /** On a route: the car's place on the route line (GPS is a few metres out), and the route's direction there. */
     val onRoute: Pos? = null,
     val routeHeading: Float? = null,
@@ -172,16 +180,17 @@ class Navigator(
         val lightAhead = if (on.lights) ahead(lights, here, heading, 500.0) else null
         val cams = if (on.cameras) areas.flatMap { it.cameras } else emptyList()
         val camAhead = if (on.cameras) cams.mapNotNull { c -> ahead(listOf(c.pos), here, heading, 1_000.0)?.let { d -> c to d } }.minByOrNull { it.second } else null
+        val nearest = if (on.limits) RoadInfo.nearestLimited(areas, here) else null
         val zone = if (on.zones) zoneNow(areas.flatMap { it.zones }.distinctBy { it.id }, here, heading) else null
         val zoneAhead = zone?.takeIf { !it.inside }?.metres
         val zoneLeft = zone?.takeIf { it.inside }?.metres
         if (limit != s.limit || lightAhead != s.signalAheadM || camAhead?.second != s.cameraAheadM || lights.size != s.signals.size ||
-            zoneAhead != s.zoneAheadM || zoneLeft != s.zoneLeftM
+            zoneAhead != s.zoneAheadM || zoneLeft != s.zoneLeftM || nearest != s.nearestLimit || areas.size != s.roadsSquares
         ) {
             _state.update {
                 it.copy(
                     limit = limit, signals = lights, signalAheadM = lightAhead, cameraAheadM = camAhead?.second, cameraKmh = camAhead?.first?.kmh,
-                    zoneAheadM = zoneAhead, zoneLeftM = zoneLeft,
+                    zoneAheadM = zoneAhead, zoneLeftM = zoneLeft, nearestLimit = nearest, roadsSquares = areas.size,
                 )
             }
         }
@@ -200,20 +209,35 @@ class Navigator(
         val now = System.currentTimeMillis()
         val want = near.firstOrNull { it !in squares && now - (squareTried[it] ?: 0L) > 30_000 } ?: return
         squareTried[want] = now
+        _state.update { it.copy(roadsLoading = true) }
         squareJob = scope.launch {
             runCatching { RoadInfo.square(roadsDir, want) }
                 .onSuccess { got ->
                     squares[want] = got
-                    _state.update { it.copy(roadsStatus = roadsStatus()) }
+                    _state.update { it.copy(roadsStatus = roadsStatus(), roadsLoading = false, roadsFailed = false) }
                     _state.value.here?.let { p -> roads(p, _state.value.heading, _state.value.speed) }
                 }
                 .onFailure { e ->
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     _state.update {
-                        it.copy(roadsStatus = "Couldn't get the road data here (trying again in 30 s): ${e.message ?: e.javaClass.simpleName}")
+                        it.copy(
+                            roadsStatus = "Couldn't get the road data here (trying again in 30 s): ${e.message ?: e.javaClass.simpleName}",
+                            roadsLoading = false, roadsFailed = true,
+                        )
                     }
                 }
         }
+    }
+
+    /** Settings' Load again: forgets what's loaded and fetches the squares round the car straight away. */
+    fun reloadRoads() {
+        squareJob?.cancel()
+        squares.clear()
+        squareTried.clear()
+        runCatching { roadsDir.listFiles()?.forEach { it.delete() } }
+        _state.update { it.copy(roadsStatus = null, roadsFailed = false, roadsSquares = 0, nearestLimit = null) }
+        val s = _state.value
+        s.here?.let { roads(it, s.heading, s.speed) }
     }
 
     /** What's loaded around the car, and where it came from, for Settings. */

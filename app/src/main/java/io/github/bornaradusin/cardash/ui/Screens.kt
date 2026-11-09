@@ -255,6 +255,8 @@ class DashActions(
     val setRoadCameras: (Boolean) -> Unit,
     val setRoadZones: (Boolean) -> Unit,
     val setCameraVoice: (Boolean) -> Unit,
+    /** Settings › Navigation › On the road › Load again. */
+    val reloadRoads: () -> Unit = {},
     val setShiftUpAt: (gear: Int, rpm: Int) -> Unit,
     val setShiftDownAt: (gear: Int, rpm: Int) -> Unit,
     val resetShiftPoints: () -> Unit,
@@ -415,7 +417,11 @@ fun CarDash(state: DashState, actions: DashActions) {
                     whereTo = false
                     scope.launch { if (pager.currentPage != PAGE_HOME) pager.scrollToPage(PAGE_HOME) }
                 }
-                else -> HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+                // On the map dash, sideways is for the map: the pages only swipe from the main dash
+                else -> HorizontalPager(
+                    pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1,
+                    userScrollEnabled = !(mapDash && pager.currentPage == PAGE_HOME),
+                ) { page ->
                     when (page) {
                         PAGE_APPS -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
                             AppsScreen(state.apps, actions)
@@ -1684,7 +1690,7 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
                             )
                             ShiftPointsCard(state, actions)
                         }
-                        SettingsSection.NAVIGATION -> TwoColumns({ NavigationCard(state, actions); RoadCard(state, actions) }, { OfflineMapCard(state, actions) })
+                        SettingsSection.NAVIGATION -> TwoColumns({ RoadCard(state, actions); NavigationCard(state, actions) }, { OfflineMapCard(state, actions) })
                         SettingsSection.CAR -> TwoColumns({ ObdCard(state, actions); FuelCard(state, actions) }, { CanCard(state, actions) })
                         SettingsSection.LOOK -> TwoColumns({ AccentCard(state, actions) }, { NameCard(state, actions); ScreenCard(state, actions) })
                         SettingsSection.MUSIC -> TwoColumns({ MusicCard(state, actions) }, { })

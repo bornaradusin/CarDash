@@ -170,6 +170,7 @@ class MainActivity : ComponentActivity() {
             setRoadCameras = { app.settings.setRoadCameras(it) },
             setRoadZones = { app.settings.setRoadZones(it) },
             setCameraVoice = { app.settings.setCameraVoice(it) },
+            reloadRoads = { app.nav.reloadRoads() },
             setShiftUpAt = { g, r -> app.settings.setShiftUpAt(g, r) },
             setShiftDownAt = { g, r -> app.settings.setShiftDownAt(g, r) },
             resetShiftPoints = { app.settings.resetShiftPoints() },

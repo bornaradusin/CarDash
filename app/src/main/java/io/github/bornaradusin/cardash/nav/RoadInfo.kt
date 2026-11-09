@@ -340,6 +340,22 @@ object RoadInfo {
         return if (n.groupValues[2].isNotEmpty()) (v * 1.609).toInt() else v
     }
 
+    /** The nearest road with a limit, within 1 km: its limit and how far, rounded to 10 m. For Settings. */
+    fun nearestLimited(areas: List<RoadArea>, here: Pos): Pair<Int, Int>? {
+        var best: Pair<Int, Double>? = null
+        for (area in areas) for (road in area.roads) {
+            val pts = road.points
+            for (i in 0 until pts.size - 1) {
+                val n = here.lat + 0.01
+                val so = here.lat - 0.01
+                if ((pts[i].lat > n && pts[i + 1].lat > n) || (pts[i].lat < so && pts[i + 1].lat < so)) continue
+                val (_, d) = Geo.project(here, pts[i], pts[i + 1])
+                if (d <= 1_000 && (best == null || d < best.second)) best = road.kmh to d
+            }
+        }
+        return best?.let { it.first to (Math.round(it.second / 10.0) * 10).toInt() }
+    }
+
     /**
      * The limit on the road the car is on: the nearest road with a limit within 25 m, preferring one
      * that runs the way the car is heading (at junctions both roads are close).
