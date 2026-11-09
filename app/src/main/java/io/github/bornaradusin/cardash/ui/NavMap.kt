@@ -89,6 +89,21 @@ private class MapHolder {
     /** The direction of the road at the car, from the last GPS fix. */
     var roadBearing: Double? = null
 
+    /** Where the car is (on the road), from the last GPS fix. */
+    var carAt: Pos? = null
+
+    /** Where the car is drawn on the map view, in pixels: under the camera while following, else wherever it is on the map. */
+    var carScreen by mutableStateOf<PointF?>(null)
+
+    /** The car's place on the view: a little below the middle while following, else wherever the map has it. */
+    fun carPoint(): PointF? {
+        val v = view ?: return null
+        if (v.width == 0 || v.height == 0) return null
+        if (following) return PointF(v.width / 2f, v.height * CAR_Y)
+        val at = carAt ?: return null
+        return map?.projection?.toScreenLocation(LatLng(at.lat, at.lon))
+    }
+
     /** How far the car picture is turned so it lines up with the road on screen, in degrees. */
     var carAngle by mutableStateOf(0f)
 
@@ -99,10 +114,9 @@ private class MapHolder {
      */
     fun alignCar() {
         val map = map ?: return
-        val v = view ?: return
+        val car = carPoint() ?: return
+        carScreen = car
         val brg = roadBearing ?: return
-        if (v.width == 0 || v.height == 0) return
-        val car = PointF(v.width / 2f, v.height * CAR_Y)
         val under = map.projection.fromScreenLocation(car)
         val ahead = Geo.offset(Pos(under.latitude, under.longitude), brg, 12.0)
         val p = map.projection.toScreenLocation(LatLng(ahead.lat, ahead.lon))
@@ -182,15 +196,23 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier, interactive: Boolean = 
         // reach the middle box
         val catcher = if (interactive) Modifier else Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
         BoxWithConstraints(Modifier.fillMaxSize().then(catcher)) {
-            if (nav.here != null && holder.following) {
+            if (nav.here != null) {
                 val w = 39.dp
                 val h = w * (214f / 256f)
                 // Turned with the road under it; eased, so a new GPS fix on a bend doesn't make it twitch
                 val angle by animateFloatAsState(holder.carAngle, spring(stiffness = Spring.StiffnessMediumLow), label = "car angle")
+                val place = if (holder.following) {
+                    Modifier.align(Alignment.TopCenter).offset(y = maxHeight * CAR_Y - h / 2)
+                } else {
+                    // Looking around: the car stays where it is on the map, moving with it
+                    Modifier.offset {
+                        val p = holder.carScreen ?: PointF(-1000f, -1000f)
+                        androidx.compose.ui.unit.IntOffset((p.x - w.toPx() / 2).toInt(), (p.y - h.toPx() / 2).toInt())
+                    }
+                }
                 Image(
                     painterResource(R.drawable.car_marker), "Your car",
-                    modifier = Modifier.align(Alignment.TopCenter).offset(y = maxHeight * CAR_Y - h / 2).width(w).height(h)
-                        .graphicsLayer { rotationZ = angle },
+                    modifier = place.width(w).height(h).graphicsLayer { rotationZ = angle },
                 )
             }
         }
@@ -282,7 +304,6 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier, interactive: Boolean = 
         src.setGeoJson(FeatureCollection.fromFeatures(nav.signals.map { Feature.fromGeometry(Point.fromLngLat(it.lon, it.lat)) }))
     }
     LaunchedEffect(holder.ready, nav.here, nav.heading, holder.following) {
-        if (!holder.following) return@LaunchedEffect
         val map = holder.map ?: return@LaunchedEffect
         val here = nav.here ?: return@LaunchedEffect
         val h = (holder.view?.height ?: 0).toDouble()
@@ -292,7 +313,10 @@ fun NavMap(nav: NavState, modifier: Modifier = Modifier, interactive: Boolean = 
         val at = road?.first ?: here
         val heading = road?.second ?: nav.heading ?: map.cameraPosition.bearing.toFloat()
         holder.roadBearing = heading.toDouble()
+        holder.carAt = at
         holder.alignCar()
+        // Looking around: the car moves on the map, the camera stays where it was put
+        if (!holder.following) return@LaunchedEffect
         // Closer in town, further out on the motorway
         val kmh = nav.speed * 3.6f
         val zoom = when {

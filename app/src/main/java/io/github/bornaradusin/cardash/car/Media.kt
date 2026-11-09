@@ -81,34 +81,99 @@ class Media(private val context: Context) {
         controller = null
     }
 
+    /** Play was pressed with nothing playing: the app being started, and until when to keep at it. */
+    private var pendingApp: String? = null
+    private var pendingUntil = 0L
+    /** The app had to be opened for it: CarDash comes back once it plays. */
+    private var opened = false
+    private var pokedAt = 0L
+
+    /** Brings CarDash back in front, after a music app had to be opened to start it. */
+    var backToCarDash: (() -> Unit)? = null
+
     /**
-     * Play / pause what's playing. With nothing playing, starts [musicApp] (YouTube Music unless the
-     * person picked another): first the way a headset's play button does, which resumes the last
-     * player, then through the app's own player service, and last by opening the app.
+     * Play / pause. With nothing playing, starts [musicApp] (YouTube Music unless the person picked
+     * another), trying each way in turn until it plays: Play to the player that's there (after the radio
+     * starts it's often there but not ready), the way a headset's play button does, the app's own
+     * player service, and last opening the app. Once the app's player is up, Play is pressed for you
+     * (it can take a while to load after the radio starts) and CarDash comes back in front.
      */
     fun playPause(musicApp: String?) {
         val c = controller
-        if (c != null) {
-            if (c.playbackState?.state == PlaybackState.STATE_PLAYING) c.transportControls.pause() else c.transportControls.play()
+        if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+            pendingApp = null
+            c.transportControls.pause()
             return
         }
+        val target = musicApp ?: c?.packageName
+        pendingApp = target
+        pendingUntil = SystemClock.elapsedRealtime() + 30_000
+        opened = false
+        if (c != null) runCatching { c.transportControls.play() } else mediaKey()
+        if (target == null) return
+        main.postDelayed({
+            if (!stillWaiting()) return@postDelayed
+            if (c != null) mediaKey()
+            resume(target)
+            main.postDelayed({
+                if (!stillWaiting()) return@postDelayed
+                context.packageManager.getLaunchIntentForPackage(target)?.let {
+                    runCatching { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    opened = true
+                }
+                keepPoking()
+            }, 2_500)
+        }, 1_500)
+    }
+
+    private fun mediaKey() {
         val audio = context.getSystemService(AudioManager::class.java)
         runCatching {
             audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
             audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
         }
-        if (musicApp == null) return
-        main.postDelayed({
-            if (isPlaying()) return@postDelayed
-            resume(musicApp)
-            main.postDelayed({
-                if (!isPlaying()) {
-                    context.packageManager.getLaunchIntentForPackage(musicApp)?.let {
-                        context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    }
-                }
-            }, 3_000)
-        }, 1_500)
+    }
+
+    private fun stillWaiting() = pendingApp != null && SystemClock.elapsedRealtime() < pendingUntil && !isPlaying()
+
+    /** While an app is being started: every 2 seconds, Play to its player once it's up, until it plays. */
+    private fun keepPoking() {
+        checkPending()
+        if (pendingApp != null) main.postDelayed({ keepPoking() }, 2_000)
+    }
+
+    /** Playing now: done (and back to CarDash if the app was opened). Else Play to the app's player, if it's up yet. */
+    private fun checkPending() {
+        val pkg = pendingApp ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (now > pendingUntil) {
+            pendingApp = null
+            return
+        }
+        val sessions = runCatching { manager.getActiveSessions(CarNotifications.component(context)) }.getOrNull().orEmpty()
+        if (sessions.any { it.playbackState?.state == PlaybackState.STATE_PLAYING }) {
+            pendingApp = null
+            if (opened) main.postDelayed({ runCatching { backToCarDash?.invoke() } }, 1_200)
+            return
+        }
+        val s = sessions.firstOrNull { it.packageName == pkg } ?: return
+        if (now - pokedAt < 2_000) return
+        pokedAt = now
+        runCatching { s.transportControls.play() }
+    }
+
+    /**
+     * Wakes [pkg]'s player in the background when the radio starts (connecting to its player service
+     * starts the app's process), so it's loaded by the time Play is pressed. Nothing plays.
+     */
+    fun warmUp(pkg: String) {
+        val service = context.packageManager
+            .queryIntentServices(Intent(MediaBrowserService.SERVICE_INTERFACE).setPackage(pkg), 0)
+            .firstOrNull()?.serviceInfo ?: return
+        val callbacks = object : MediaBrowser.ConnectionCallback() {}
+        val b = MediaBrowser(context, ComponentName(service.packageName, service.name), callbacks, null)
+        runCatching { b.connect() }
+        main.postDelayed({ runCatching { b.disconnect() } }, 8_000)
     }
 
     private fun isPlaying(): Boolean {
@@ -150,6 +215,7 @@ class Media(private val context: Context) {
             best?.registerCallback(callback, main)
         }
         publish()
+        checkPending()
     }
 
     private fun publish() {

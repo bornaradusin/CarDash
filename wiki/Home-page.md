@@ -50,11 +50,11 @@ Over whatever view is on: the TT from above, with what's open in the accent colo
 
 The 3D map fills the whole middle, turning with the car. On it: the next turn big, top left, with the one after it; arriving, minutes left and distance to go, top right, with **Mute** and **End route**; your speed with the speed limit and the traffic lights ahead, bottom left; and the gear, revs, oil, boost and fuel, bottom right. Without a route it shows the street you're on and **Where to?**.
 
-On the map dash you can move the map with a finger and zoom with two, anywhere in the middle or on the right (the left of the screen stays for swiping up or down). The pages don't swipe sideways from the map dash: swipe back to the main dash first. The map stops following the car while you look around; **Follow the car** at the bottom puts it back, and so does leaving it alone for 20 seconds.
+On the map dash you can move the map with a finger and zoom with two, anywhere in the middle or on the right (the left of the screen stays for swiping up or down). The pages don't swipe sideways from the map dash: swipe back to the main dash first. The map stops following the car while you look around (the car stays on the map where it is, moving as you drive); **Follow the car** at the bottom puts it back, and so does leaving it alone for 20 seconds.
 
 ## Along the bottom
 
-- **Music**: what's playing, with previous, play/pause and next. Play starts your music app when nothing is playing. Hold the song title to choose which app that is.
+- **Music**: what's playing, with previous, play/pause and next. Play starts your music app when nothing is playing. Hold the song title to choose which app that is. Right after the radio starts the app may not be ready: CarDash keeps at it, and if it has to open the app it presses play for you once the app has loaded, then comes back to the dash. CarDash also wakes the app in the background when the radio starts, so it's quicker.
 - **Four app buttons**: tap to open. Long-press to choose the app or the icon.
 - **All apps**: the [Apps](Apps) page.
 

@@ -95,6 +95,8 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -377,6 +379,11 @@ fun CarDash(state: DashState, actions: DashActions) {
         if (routing && centre.currentPage == VIEW_CAR) centre.animateScrollToPage(VIEW_MAP)
     }
     var searchText by remember { mutableStateOf("") }
+    // The radio's Back button closes Settings and Where to?
+    androidx.activity.compose.BackHandler(enabled = settings || whereTo) {
+        settings = false
+        whereTo = false
+    }
     // A shared place's route has started: off Where to? (or Settings) to the main dash, the map in the middle box
     LaunchedEffect(state.sharedRoutes) {
         if (state.sharedRoutes == 0) return@LaunchedEffect
@@ -858,9 +865,16 @@ private fun Home(
     val doors = remember(state.can) { Doors.from(state.can.values) }
     // The big map takes the RPM dial's place (its own view, route or not); an open door shows over it
     val views = centreViews(state.routed())
-    // Once the swipe has settled, not halfway through it: the dial going and the box widening mid-swipe
-    // made the swipe judder
-    val big = views.getOrElse(centre.settledPage) { views.last() } == VIEW_BIG_MAP && !doors.anyOpen
+    // How far the middle box is towards the big map, 0 to 1, following the swipe frame by frame: the RPM
+    // dial slides out and fades as the box widens. Read while laying out and drawing, so the swipe
+    // doesn't redraw the whole dash every frame
+    val bigIdx = views.indexOf(VIEW_BIG_MAP)
+    val anyDoor = doors.anyOpen
+    val toBig: () -> Float = {
+        if (anyDoor || bigIdx < 0) 0f
+        else (1f - kotlin.math.abs(centre.currentPage + centre.currentPageOffsetFraction - bigIdx)).coerceIn(0f, 1f)
+    }
+    val big by remember(bigIdx, anyDoor) { derivedStateOf { toBig() > 0.5f } }
     Column(Modifier.fillMaxSize()) {
         // Up or down on the left of the screen: the main dash or the map dash (the middle box keeps its own swipe)
         val swipe = Modifier.leftSwipe(LEFT_SWIPE) { setMapDash(!mapDash) }
@@ -874,31 +888,53 @@ private fun Home(
             Row(
                 Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // The two big dials sit in the middle of the height: the same space above them as below
-                // (the Row's 10 dp at the bottom is made up with half of it here)
-                if (!big) Box(Modifier.align(Alignment.CenterVertically).offset(y = 5.dp)) { RpmDial(r, state.gear, DIAL) }
+                // (the Row's 10 dp at the bottom is made up with half of it here). The RPM dial's place,
+                // with the gap after it, narrows as the big map comes in: the dial slides left and fades
+                Box(
+                    Modifier.align(Alignment.CenterVertically).clipToBounds().layout { m, c ->
+                        val w = ((DIAL + 8.dp).toPx() * (1f - toBig())).roundToInt().coerceAtLeast(0)
+                        val p = m.measure(c.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                        layout(w, p.height) { p.place(0, 0) }
+                    },
+                ) {
+                    Box(
+                        Modifier.offset(y = 5.dp).graphicsLayer {
+                            val f = toBig()
+                            alpha = 1f - f
+                            translationX = -size.width * 0.3f * f
+                        },
+                    ) { RpmDial(r, state.gear, DIAL) }
+                }
                 // The box from just under the divider, the small gauges under it, just above the bottom bar
                 Column(
                     Modifier.weight(1f).fillMaxHeight().padding(top = GAUGE_TOP),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    CenterPanel(state, actions, doors, centre, openSearch, wide = big, modifier = Modifier.weight(1f).fillMaxWidth())
+                    CenterPanel(state, actions, doors, centre, openSearch, toBig, modifier = Modifier.weight(1f).fillMaxWidth())
                     Spacer(Modifier.height(10.dp))
                     // Wider than the box: reaches out under the edges of the dials, centred
                     Row(
                         Modifier.wrapContentWidth(Alignment.CenterHorizontally, unbounded = true),
                         horizontalArrangement = Arrangement.spacedBy(GAUGE_GAP),
                     ) {
-                        if (big) {
-                            // With the big map: more small gauges rather than wider ones, RPM and coolant among them
-                            RoundGauge(Ic.gauge, "RPM", r.rpm, 0f, 6000f, r.rpm?.let { "${it.toInt()}" }, "rpm", warnAbove = 4500f, diameter = GAUGE)
-                            RoundGauge(Ic.coolant, "Coolant", r.coolantC, 40f, 140f, r.coolantC?.let { "${it.toInt()}" }, "°C", warnAbove = 110f, diameter = GAUGE)
+                        // With the big map: more small gauges rather than wider ones, RPM and coolant among them,
+                        // easing in and out
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = big,
+                            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
+                            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(),
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(GAUGE_GAP)) {
+                                RoundGauge(Ic.gauge, "RPM", r.rpm, 0f, 6000f, r.rpm?.let { "${it.toInt()}" }, "rpm", warnAbove = 4500f, diameter = GAUGE)
+                                RoundGauge(Ic.coolant, "Coolant", r.coolantC, 40f, 140f, r.coolantC?.let { "${it.toInt()}" }, "°C", warnAbove = 110f, diameter = GAUGE)
+                            }
                         }
                         SmallGauges(r)
                     }
                 }
+                Spacer(Modifier.width(8.dp))
                 Box(Modifier.align(Alignment.CenterVertically).offset(y = 5.dp)) { SpeedDial(r, state.obd.trip.meters, DIAL) }
             }
             ShiftHintIcons(state, big)
@@ -913,6 +949,16 @@ private fun Home(
     }
 }
 
+
+/**
+ * Lays its content out [width] wide (from the width it's given and the RPM dial's place, [DIAL] and
+ * its gap), centred and cut to the space it has: for a map that keeps its size while the box widens.
+ */
+private fun Modifier.steadyWidth(width: (Int, Int) -> Int): Modifier = clipToBounds().layout { m, c ->
+    val w = width(c.maxWidth, (DIAL + 8.dp).roundToPx()).coerceAtLeast(1)
+    val p = m.measure(Constraints.fixed(w, c.maxHeight))
+    layout(c.maxWidth, c.maxHeight) { p.place((c.maxWidth - w) / 2, 0) }
+}
 
 /** How far in from the left a swipe up or down switches between the main dash and the map dash. */
 internal val LEFT_SWIPE = 300.dp
@@ -1068,7 +1114,8 @@ private fun CenterPanel(
     doors: Doors,
     centre: PagerState,
     openSearch: () -> Unit,
-    wide: Boolean,
+    /** How far towards the big map the box is (0 to 1): see Home. */
+    toBig: () -> Float,
     modifier: Modifier,
 ) {
     val alert = doors.anyOpen || state.nav.route != null || state.google != null
@@ -1087,9 +1134,15 @@ private fun CenterPanel(
             VerticalPager(centre, Modifier.fillMaxSize()) { page ->
                 when (views.getOrElse(page) { VIEW_BIG_MAP }) {
                     VIEW_CAR -> Box(Modifier.fillMaxSize().padding(12.dp)) { DrivePanel(state.obd, state.canValues[CanRole.RANGE]) }
-                    VIEW_MAP -> Box(Modifier.fillMaxSize().padding(6.dp)) { MapPanel(state, actions, openSearch, false) }
+                    // The maps keep the size they end up at while the box changes width, cut to it: a map that
+                    // changed size every frame would flicker
+                    VIEW_MAP -> Box(Modifier.fillMaxSize().padding(6.dp).steadyWidth { w, extra -> w - (extra * toBig()).roundToInt() }) {
+                        MapPanel(state, actions, openSearch, false)
+                    }
                     VIEW_DIRECTIONS -> Box(Modifier.fillMaxSize().padding(12.dp)) { DirectionsPanel(state, actions, openSearch) }
-                    else -> Box(Modifier.fillMaxSize().padding(6.dp)) { MapPanel(state, actions, openSearch, wide) }
+                    else -> Box(Modifier.fillMaxSize().padding(6.dp).steadyWidth { w, extra -> w + (extra * (1f - toBig())).roundToInt() }) {
+                        MapPanel(state, actions, openSearch, true)
+                    }
                 }
             }
             // Which view is on: dots down the right edge
@@ -1662,8 +1715,16 @@ private fun SettingsScreen(state: DashState, actions: DashActions, close: () -> 
     var section by rememberSaveable { mutableStateOf(SettingsSection.DRIVING) }
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = close), contentAlignment = Alignment.Center) {
-                Icon(Ic.back, "Back", tint = C.ink, modifier = Modifier.size(28.dp))
+            // A big Back, easy to hit while driving (the radio's Back button does the same)
+            Row(
+                Modifier.height(56.dp).clip(RoundedCornerShape(16.dp)).background(C.panelHi)
+                    .border(1.dp, C.lineHi, RoundedCornerShape(16.dp)).clickable(onClick = close)
+                    .padding(start = 14.dp, end = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Ic.back, null, tint = C.ink, modifier = Modifier.size(30.dp))
+                Text("Back", color = C.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             }
             Text("Settings", color = C.ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))

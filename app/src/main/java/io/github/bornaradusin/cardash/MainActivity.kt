@@ -40,6 +40,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Whether the music app has been woken since the app (the radio) started. */
+private var warmed = false
+
 class MainActivity : ComponentActivity() {
 
     private val app get() = application as CarDashApp
@@ -59,6 +62,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         media = Media(this)
+        // A music app opened to start it: back to CarDash once it plays
+        media.backToCarDash = {
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        }
+        // Once per start of the radio: the music app's player woken in the background, ready for Play
+        if (!warmed) {
+            warmed = true
+            window.decorView.postDelayed({ if (media.now.value?.playing != true) musicApp()?.let { media.warmUp(it) } }, 10_000)
+        }
         takeShared(intent)
 
         val actions = DashActions(
@@ -216,6 +228,11 @@ class MainActivity : ComponentActivity() {
         C.setAccent(Color(app.settings.accent.value))
         app.offlineMaps.start()
 
+        // Back on Home does nothing: there's nowhere further back to go. Settings and Where to? close
+        // with it (their own handlers, added later, come first)
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = Unit
+        })
         setContent {
             val obd by app.obd.state.collectAsState()
             val google by CarNotifications.nav.collectAsState()
@@ -423,10 +440,6 @@ class MainActivity : ComponentActivity() {
         // The radio's Home button while CarDash is open: back to the Home page
         if (intent.hasCategory(Intent.CATEGORY_HOME)) homePresses++
     }
-
-    /** Pressing Back on Home does nothing: there's nowhere further back to go. */
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() = Unit
 
     /** The app Play starts when nothing is playing: the one chosen in Settings, else YouTube Music. */
     private fun musicApp(): String? {

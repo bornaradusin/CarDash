@@ -1,4 +1,4 @@
-Open Settings from the cog, top right. The back arrow, or the radio's Home button, closes them.
+Open Settings from the cog, top right. **Back** at the top left, the radio's Back button or its Home button closes them.
 
 Settings come in six sections, down the left: tap one to see its cards. It opens on **Driving**.
 
