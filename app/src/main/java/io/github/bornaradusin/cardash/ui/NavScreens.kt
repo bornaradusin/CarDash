@@ -346,11 +346,7 @@ internal fun MapPanel(state: DashState, actions: DashActions, onSearch: () -> Un
                 nav.destination == null -> WhereToButton(onSearch, if (wide) Modifier.widthIn(max = 360.dp) else Modifier)
             }
         }
-        // The speed limit on the road you're on, red inside once you're over it
-        val kmhNow = state.obd.readings.speedKmh ?: (nav.speed * 3.6f)
-        nav.limit?.let { limit ->
-            SpeedSign(limit, kmhNow > limit + 2, Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 12.dp))
-        }
+        // The speed limit is shown in the launcher's top-right corner, so the box map leaves it out
     }
 }
 

@@ -162,20 +162,6 @@ class Media(private val context: Context) {
         runCatching { s.transportControls.play() }
     }
 
-    /**
-     * Wakes [pkg]'s player in the background when the radio starts (connecting to its player service
-     * starts the app's process), so it's loaded by the time Play is pressed. Nothing plays.
-     */
-    fun warmUp(pkg: String) {
-        val service = context.packageManager
-            .queryIntentServices(Intent(MediaBrowserService.SERVICE_INTERFACE).setPackage(pkg), 0)
-            .firstOrNull()?.serviceInfo ?: return
-        val callbacks = object : MediaBrowser.ConnectionCallback() {}
-        val b = MediaBrowser(context, ComponentName(service.packageName, service.name), callbacks, null)
-        runCatching { b.connect() }
-        main.postDelayed({ runCatching { b.disconnect() } }, 8_000)
-    }
-
     private fun isPlaying(): Boolean {
         pick()
         return controller?.playbackState?.state == PlaybackState.STATE_PLAYING

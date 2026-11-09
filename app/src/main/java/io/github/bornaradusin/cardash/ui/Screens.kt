@@ -965,7 +965,8 @@ private fun Home(
                 val kmh = r.speedKmh ?: (state.nav.speed * 3.6f)
                 SpeedSign(limit, kmh > limit + 2, Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 14.dp))
             }
-            state.nav.signalAheadM?.let { LightsAhead(it, Modifier.align(Alignment.TopStart).padding(top = 10.dp, start = 16.dp)) }
+            // Lights-ahead only with the small map: on the big map it clashes with the map's own top-left box
+            if (!big) state.nav.signalAheadM?.let { LightsAhead(it, Modifier.align(Alignment.TopStart).padding(top = 10.dp, start = 16.dp)) }
         }
         BottomBar(state, actions, allApps)
     }

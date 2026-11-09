@@ -506,6 +506,7 @@ private fun addLayers(style: Style) {
         style.addImage(SIGNAL, trafficLight())
         val lights = SymbolLayer("cardash-signals", SIGNALS_SRC).withProperties(
             PropertyFactory.iconImage(SIGNAL),
+            PropertyFactory.iconSize(2f / 3f),
             PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
             PropertyFactory.iconPitchAlignment(Property.ICON_PITCH_ALIGNMENT_VIEWPORT),
             PropertyFactory.iconAllowOverlap(true),

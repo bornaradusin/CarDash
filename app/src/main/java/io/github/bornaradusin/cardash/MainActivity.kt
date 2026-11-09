@@ -40,8 +40,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Whether the music app has been woken since the app (the radio) started. */
-private var warmed = false
+/** Whether Play has been pressed once since the app (the radio) started. */
+private var playedOnBoot = false
 
 class MainActivity : ComponentActivity() {
 
@@ -57,6 +57,8 @@ class MainActivity : ComponentActivity() {
     private var searchFor by mutableStateOf<String?>(null)
     /** Asked once per start, so the map doesn't keep asking after a no. */
     private var askedLocation = false
+    /** The wait-for-Wi-Fi callback that presses Play once on start-up; unregistered once it fires. */
+    private var wifiCallback: android.net.ConnectivityManager.NetworkCallback? = null
     private val locationRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { app.nav.start() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,11 +68,8 @@ class MainActivity : ComponentActivity() {
         media.backToCarDash = {
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
         }
-        // Once per start of the radio: the music app's player woken in the background, ready for Play
-        if (!warmed) {
-            warmed = true
-            window.decorView.postDelayed({ if (media.now.value?.playing != true) musicApp()?.let { media.warmUp(it) } }, 10_000)
-        }
+        // Once per start of the radio: wait for Wi-Fi, then press Play once so the music app starts
+        playWhenOnline()
         takeShared(intent)
 
         val actions = DashActions(
@@ -390,8 +389,40 @@ class MainActivity : ComponentActivity() {
         locationRequest.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
+    /**
+     * Once per start of the radio, presses Play by itself: waits for Wi-Fi to connect, then — if nothing
+     * is already playing — presses Play once, so whatever music app is set as default starts.
+     */
+    private fun playWhenOnline() {
+        if (playedOnBoot) return
+        playedOnBoot = true
+        val cm = getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
+        fun press() {
+            if (done.getAndSet(true)) return
+            wifiCallback?.let { cb -> runCatching { cm.unregisterNetworkCallback(cb) } }
+            wifiCallback = null
+            if (media.now.value?.playing != true) media.playPause(musicApp())
+        }
+        val active = cm.getNetworkCapabilities(cm.activeNetwork)
+        if (active?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true) {
+            press()
+            return
+        }
+        val request = android.net.NetworkRequest.Builder()
+            .addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+            .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) = runOnUiThread { press() }
+        }
+        wifiCallback = cb
+        runCatching { cm.registerNetworkCallback(request, cb) }
+    }
+
     override fun onDestroy() {
         media.stop()
+        wifiCallback?.let { cb -> runCatching { getSystemService(android.net.ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } }
         shareScope.cancel()
         super.onDestroy()
     }
