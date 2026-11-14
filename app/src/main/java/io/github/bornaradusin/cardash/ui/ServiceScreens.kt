@@ -57,6 +57,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import io.github.bornaradusin.cardash.CarDashApp
+import io.github.bornaradusin.cardash.car.LubeException
+import io.github.bornaradusin.cardash.car.LubeLink
+import io.github.bornaradusin.cardash.car.LubeSetup
+import java.time.Instant
+import java.time.ZoneId
+import kotlinx.coroutines.launch
 import io.github.bornaradusin.cardash.car.ServiceBook
 import io.github.bornaradusin.cardash.car.ServiceItem
 import io.github.bornaradusin.cardash.car.ServiceKind
@@ -155,12 +167,14 @@ internal fun ServiceSettings(s: ServiceState, actions: DashActions, diesel: Bool
     var picking by remember { mutableStateOf(false) }
     var newItem by remember { mutableStateOf<ServiceItem?>(null) }
     var doneFor by remember { mutableStateOf<ServiceItem?>(null) }
+    val lube = (LocalContext.current.applicationContext as CarDashApp).lube
     val missing = ServiceBook.defaults(diesel).count { d -> s.items.none { it.kind == d.kind } }
 
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             OdometerCard(s, actions)
             RemindCard(s, actions)
+            LubeCard(lube, s.fromCan)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Card("Items") {
@@ -214,7 +228,11 @@ internal fun ServiceSettings(s: ServiceState, actions: DashActions, diesel: Bool
         )
     }
     doneFor?.let { item ->
-        DoneDialog(item, s, onSave = { actions.saveService(it); doneFor = null }, onDismiss = { doneFor = null })
+        DoneDialog(item, s, onSave = {
+            actions.saveService(it)
+            lube.serviceDone(it)
+            doneFor = null
+        }, onDismiss = { doneFor = null })
     }
 }
 
@@ -361,6 +379,141 @@ private fun DoneDialog(item: ServiceItem, s: ServiceState, onSave: (ServiceItem)
     }
     if (picking) {
         PickDate(LocalDate.ofEpochDay(day), onPick = { day = it.toEpochDay() }, onDismiss = { picking = false })
+    }
+}
+
+/**
+ * LubeLogger, optional: the dashboard's kilometres go there once a day, and the service items can
+ * follow its records. CarTracker reads both from it.
+ */
+@Composable
+private fun LubeCard(lube: LubeLink, fromCan: Boolean) {
+    val st by lube.state.collectAsState()
+    val setup = st.setup
+    var editing by remember { mutableStateOf(false) }
+    Card("LubeLogger") {
+        if (!setup.connected) {
+            Text(
+                "Optional. Connect your LubeLogger and CarDash can send it the car's exact kilometres and share the service items with it. CarTracker then follows the same numbers.",
+                color = C.muted, fontSize = 14.sp, lineHeight = 20.sp,
+            )
+            Wide("Connect LubeLogger") { editing = true }
+        } else {
+            Text(setup.vehicleName.ifBlank { "Connected" }, color = C.ink, fontSize = 17.sp)
+            Text(setup.server.removePrefix("https://").removePrefix("http://"), color = C.muted, fontSize = 14.sp)
+            LubeSwitch(
+                "Send the odometer",
+                if (fromCan) "The dashboard's km, once a day as the first drive starts" else "Needs the odometer from the CAN box (Settings › Radio's CAN box)",
+                setup.sendOdometer,
+            ) { lube.save(setup.copy(sendOdometer = it)) }
+            LubeSwitch(
+                "Share the service items",
+                "Done here adds a record there; a record there with an item's name counts as done here",
+                setup.shareService,
+            ) { lube.save(setup.copy(shareService = it)) }
+            val status = listOfNotNull(
+                st.sentKm?.takeIf { st.sentAt > 0 }?.let {
+                    "Last sent ${km(it)} km, " + Instant.ofEpochMilli(st.sentAt).atZone(ZoneId.systemDefault()).toLocalDate().format(DAY)
+                },
+                if (st.waiting > 0) "${st.waiting} waiting for the radio to be online" else null,
+            ).joinToString(" · ")
+            if (status.isNotBlank()) Text(status, color = C.ink2, fontSize = 14.sp)
+            st.problem?.let { Text(it, color = C.red, fontSize = 14.sp, lineHeight = 20.sp) }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.weight(1f)) { Wide("Change") { editing = true } }
+                Box(Modifier.weight(1f)) { Wide("Disconnect") { lube.disconnect() } }
+            }
+        }
+    }
+    if (editing) LubeDialog(lube, setup, onDismiss = { editing = false })
+}
+
+@Composable
+private fun LubeSwitch(title: String, sub: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = C.ink, fontSize = 17.sp)
+            Text(sub, color = C.muted, fontSize = 14.sp, lineHeight = 19.sp)
+        }
+        Switch(checked = checked, onCheckedChange = onChange, colors = SwitchDefaults.colors(checkedTrackColor = C.red, checkedThumbColor = C.ink))
+    }
+}
+
+/** The address and an Editor API key, then which of its vehicles this car is. */
+@Composable
+private fun LubeDialog(lube: LubeLink, current: LubeSetup, onDismiss: () -> Unit) {
+    var server by remember { mutableStateOf(current.server) }
+    var key by remember { mutableStateOf(current.apiKey) }
+    var vehicles by remember { mutableStateOf<List<Pair<Int, String>>?>(null) }
+    var checking by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    KeyboardDialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.width(900.dp).clip(RoundedCornerShape(28.dp)).background(C.panelHi).padding(horizontal = 24.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Connect LubeLogger", color = C.ink, fontSize = 24.sp)
+            val list = vehicles
+            if (list == null) {
+                Text(
+                    "Its address, and an API key from LubeLogger's settings with the Editor role (so CarDash can add records). Paste puts in a key you've copied.",
+                    color = C.ink2, fontSize = 15.sp, lineHeight = 21.sp,
+                )
+                OutlinedTextField(
+                    value = server,
+                    onValueChange = { server = it.trim().take(200); problem = null },
+                    singleLine = true,
+                    placeholder = { Text("lubelogger.example.com", color = C.muted) },
+                    textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
+                    colors = fieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it.trim().take(200); problem = null },
+                    singleLine = true,
+                    placeholder = { Text("API key", color = C.muted) },
+                    textStyle = TextStyle(color = C.ink, fontSize = 18.sp),
+                    colors = fieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                Text("Which vehicle is this car?", color = C.ink2, fontSize = 15.sp)
+                if (list.isEmpty()) Text("This key sees no vehicles.", color = C.muted, fontSize = 15.sp)
+                list.forEach { (id, name) ->
+                    Wide(name) {
+                        lube.save(current.copy(server = server, apiKey = key, vehicleId = id, vehicleName = name))
+                        onDismiss()
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                when {
+                    checking -> Text("Trying it…", color = C.muted, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    problem != null -> Text(problem.orEmpty(), color = C.red, fontSize = 15.sp, maxLines = 2, modifier = Modifier.weight(1f))
+                    else -> Spacer(Modifier.weight(1f))
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel", color = C.ink2, fontSize = 15.sp) }
+                if (list == null) {
+                    TextButton(
+                        enabled = !checking && server.isNotBlank() && key.isNotBlank(),
+                        onClick = {
+                            checking = true
+                            scope.launch {
+                                try {
+                                    vehicles = lube.vehicles(server, key)
+                                } catch (e: Exception) {
+                                    problem = (e as? LubeException)?.message ?: "Couldn't connect."
+                                } finally {
+                                    checking = false
+                                }
+                            }
+                        },
+                    ) { Text("Next", color = C.red, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
     }
 }
 

@@ -38,6 +38,9 @@ class CarDashApp : Application() {
     /** What needs servicing, counted down from the car's odometer. */
     val service: ServiceBook by lazy { ServiceBook(this, settings.diesel.value) }
 
+    /** The car's LubeLogger, when it's set up: the odometer and service items go there. */
+    val lube: io.github.bornaradusin.cardash.car.LubeLink by lazy { io.github.bornaradusin.cardash.car.LubeLink(this, scope, service) }
+
     /** CarDash's own navigation: GPS, routes, directions. */
     val nav: Navigator by lazy {
         Navigator(this, { settings.spoken.value }) {
@@ -69,6 +72,7 @@ class CarDashApp : Application() {
         super.onCreate()
         updater.start()
         weather.start()
+        lube.start()
         // The map library, once for the whole app
         MapLibre.getInstance(this)
         // Its downloads, gentler than its own: 8 tiles at a time and long timeouts. A saved area
@@ -90,7 +94,10 @@ class CarDashApp : Application() {
         scope.launch {
             combine(can.state, settings.canPicks) { c, picks -> canValues(c.values, effectivePicks(c.values, picks))[CanRole.ODOMETER] }
                 .distinctUntilChanged()
-                .collect { service.onCanOdometer(it) }
+                .collect {
+                    service.onCanOdometer(it)
+                    lube.onCanOdometer(it)
+                }
         }
         // Distance from OBD speed, for when the CAN box gives no odometer
         scope.launch {
@@ -106,7 +113,10 @@ class CarDashApp : Application() {
             obd.state.map { it.link == Link.CONNECTED }.collect { connected ->
                 if (!connected) return@collect
                 val now = System.currentTimeMillis()
-                if (now - lastConnected > NEW_DRIVE_MS) service.newDrive()
+                if (now - lastConnected > NEW_DRIVE_MS) {
+                    service.newDrive()
+                    lube.newDrive()
+                }
                 lastConnected = now
             }
         }
