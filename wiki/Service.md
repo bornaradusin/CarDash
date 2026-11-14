@@ -89,3 +89,14 @@ While anything is due, the header also shows **2 due** (or however many), which 
 To change how early the reminder comes, use **Remind me** in **Settings › Service**: 250 to 5,000 km, and 5 to 90 days.
 
 A new drive starts when CarDash starts, or when the car answers again after more than three minutes without it.
+
+## LubeLogger (optional)
+
+If you keep the car's records in [LubeLogger](https://lubelogger.com), CarDash can work with it. Nothing changes until you connect it.
+
+In **Settings › Service**, tap **Connect LubeLogger**, give its address and an API key from LubeLogger's settings with the **Editor** role, then pick which of its vehicles this car is. Then turn on either or both:
+
+- **Send the odometer**: once a day, as the first drive starts, CarDash adds an odometer record with the dashboard's kilometres, read from the CAN box while the car is still parked. It needs the odometer from the CAN box ([Radio's CAN box](Radios-CAN-box)); a count from OBD speed isn't exact enough to send. The record's note has the exact time, which [CarTracker](https://github.com/bornaradusin/CarTracker/wiki/Service-and-costs) uses to set the tracker's kilometres to match.
+- **Share the service items**: **Done** on an item adds a service record in LubeLogger with the item's name (cost 0, to fill in later). The other way, a service, repair or upgrade record in LubeLogger with an item's name in its description counts as that item being done, so work logged elsewhere (in CarTracker, or LubeLogger itself) fills the bar here too. Name items the same way everywhere. CarDash looks for new records when it starts and every six hours.
+
+If the radio is offline, readings and records wait and go when it's back online; the card shows how many are waiting, and any problem LubeLogger reports.
