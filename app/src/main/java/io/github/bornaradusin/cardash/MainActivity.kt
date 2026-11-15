@@ -165,10 +165,7 @@ class MainActivity : ComponentActivity() {
             },
             saveService = { app.service.save(it) },
             removeService = { app.service.remove(it) },
-            serviceDone = { id ->
-                app.service.done(id)
-                app.service.state.value.items.firstOrNull { it.id == id }?.let { app.lube.serviceDone(it) }
-            },
+            serviceDone = { app.service.done(it) },
             restoreService = { app.service.restoreDefaults(app.settings.diesel.value) },
             setRemindKm = { app.service.setKmBefore(it) },
             setRemindDays = { app.service.setDaysBefore(it) },

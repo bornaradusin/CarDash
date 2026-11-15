@@ -33,8 +33,6 @@ data class LubeSetup(
     val vehicleName: String = "",
     /** Sends the CAN box's odometer, once a day, at the start of the first drive. */
     val sendOdometer: Boolean = false,
-    /** Service items follow LubeLogger's records, and Done adds a record there. */
-    val shareService: Boolean = false,
 ) {
     val connected: Boolean get() = server.isNotBlank() && apiKey.isNotBlank() && vehicleId != null
 }
@@ -73,7 +71,6 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
                 vehicleId = sp.getInt("vehicleId", -1).takeIf { it >= 0 },
                 vehicleName = sp.getString("vehicleName", "").orEmpty(),
                 sendOdometer = sp.getBoolean("sendOdometer", false),
-                shareService = sp.getBoolean("shareService", false),
             ),
             sentKm = sp.getInt("sentKm", -1).takeIf { it >= 0 },
             sentAt = sp.getLong("sentAt", 0L),
@@ -104,7 +101,6 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
             .putInt("vehicleId", setup.vehicleId ?: -1)
             .putString("vehicleName", setup.vehicleName)
             .putBoolean("sendOdometer", setup.sendOdometer)
-            .putBoolean("shareService", setup.shareService)
             .apply()
         _state.update { it.copy(setup = setup, problem = null) }
         scope.launch {
@@ -115,6 +111,7 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
 
     fun disconnect() {
         save(LubeSetup())
+        service.replaceAll(emptyList())
         sp.edit().putString("queue", "[]").apply()
         _state.update { it.copy(waiting = 0) }
     }
@@ -123,6 +120,8 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
     fun newDrive() {
         readingDue = true
         canKm?.let { onCanOdometer(it) }
+        // Items done or changed since: read them again
+        scope.launch { runCatching { syncService() } }
     }
 
     /** The CAN box's odometer; null when it isn't giving one. Only the CAN box is exact enough to send. */
@@ -139,21 +138,6 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
         // Once a day is plenty, and not at all while the car hasn't moved
         if (sentToday || reading == s.sentKm) return
         enqueue(JSONObject().put("type", "odometer").put("km", reading).put("at", System.currentTimeMillis()))
-    }
-
-    /** An item marked done in CarDash: a service record in LubeLogger too. */
-    fun serviceDone(item: ServiceItem) {
-        val setup = _state.value.setup
-        if (!setup.connected || !setup.shareService) return
-        val day = item.lastDay ?: LocalDate.now().toEpochDay()
-        enqueue(
-            JSONObject()
-                .put("type", "service")
-                .put("name", item.name)
-                .put("day", day)
-                .apply { item.lastKm?.let { put("km", it) } }
-                .put("at", System.currentTimeMillis()),
-        )
     }
 
     /** The vehicles the key can see, to pick the car from. */
@@ -218,29 +202,21 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
                 )
                 call(setup.server, setup.apiKey, "POST", "/api/vehicle/odometerrecords/add", vehicle, fields)
             }
-            "service" -> {
-                val fields = linkedMapOf(
-                    "date" to LocalDate.ofEpochDay(entry.getLong("day")).toString(),
-                    "odometer" to (entry.optInt("km", 0)).toString(),
-                    "description" to entry.getString("name"),
-                    "cost" to "0",
-                    "notes" to "Marked done in CarDash",
-                )
-                call(setup.server, setup.apiKey, "POST", "/api/vehicle/servicerecords/add", vehicle, fields)
-            }
         }
     }
 
     // ---- service items from LubeLogger ----
 
     /**
-     * Each item counts as done on the newest service, repair or upgrade record with the item's name
-     * in its description, when that's later than what CarDash has.
+     * The service items as CarTracker keeps them in LubeLogger: one reminder each, with the interval
+     * and the last time in its notes. A service, repair or upgrade record with an item's name in its
+     * description, newer than that, counts as the item done then.
      */
     suspend fun syncService() {
         val setup = _state.value.setup
         val vehicle = setup.vehicleId
-        if (!setup.connected || !setup.shareService || vehicle == null) return
+        if (!setup.connected || vehicle == null) return
+        val reminders = JSONArray(call(setup.server, setup.apiKey, "GET", "/api/vehicle/reminders", vehicle, null))
         val records = listOf("servicerecords", "repairrecords", "upgraderecords").flatMap { path ->
             val array = JSONArray(call(setup.server, setup.apiKey, "GET", "/api/vehicle/$path", vehicle, null))
             (0 until array.length()).mapNotNull { i ->
@@ -249,15 +225,29 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
                 Triple(r.optString("description"), date, number(r.opt("odometer"))?.roundToInt()?.takeIf { it > 0 })
             }
         }
-        service.state.value.items.forEach { item ->
-            val name = item.name.trim()
-            if (name.length < 3) return@forEach
-            val newest = records.filter { it.first.contains(name, ignoreCase = true) }.maxByOrNull { it.second } ?: return@forEach
-            val have = item.lastDay
-            if (have == null || newest.second.toEpochDay() > have) {
-                service.save(item.copy(lastDay = newest.second.toEpochDay(), lastKm = newest.third ?: item.lastKm))
+        val items = (0 until reminders.length()).mapNotNull { i ->
+            val r = reminders.optJSONObject(i) ?: return@mapNotNull null
+            val m = MARK.find(r.optString("notes")) ?: return@mapNotNull null
+            val (everyKm, everyMonths, lastKm, lastDay) = m.destructured
+            val name = r.optString("description").trim()
+            var item = ServiceItem(
+                id = "r" + (number(r.opt("id"))?.toInt() ?: i),
+                kind = ServiceKind.entries.firstOrNull { it != ServiceKind.CUSTOM && it.title.equals(name, ignoreCase = true) } ?: ServiceKind.CUSTOM,
+                name = name,
+                everyKm = everyKm.toIntOrNull(),
+                everyMonths = everyMonths.toIntOrNull(),
+                lastKm = lastKm.toIntOrNull(),
+                lastDay = runCatching { LocalDate.parse(lastDay).toEpochDay() }.getOrNull(),
+            )
+            if (name.length >= 3) {
+                val newest = records.filter { it.first.contains(name, ignoreCase = true) }.maxByOrNull { it.second }
+                if (newest != null && (item.lastDay == null || newest.second.toEpochDay() >= item.lastDay!!)) {
+                    item = item.copy(lastDay = newest.second.toEpochDay(), lastKm = newest.third ?: item.lastKm)
+                }
             }
+            item
         }
+        service.replaceAll(items)
         _state.update { it.copy(problem = null) }
     }
 
@@ -307,6 +297,9 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
     }
 
     companion object {
+        /** The line in a reminder's notes that makes it a service item; CarTracker writes it. */
+        private val MARK = Regex("""\[service item: every=(\d*)km,(\d*)mo; last=(\d*)km,([0-9-]*)\]""")
+
         /** The start of the note on each reading; CarTracker looks for it. */
         const val NOTE_PREFIX = "CarDash odometer"
 

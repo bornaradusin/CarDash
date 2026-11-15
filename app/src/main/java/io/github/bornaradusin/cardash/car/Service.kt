@@ -146,7 +146,8 @@ class ServiceBook(context: Context, diesel: Boolean) {
 
     private val _state = MutableStateFlow(
         ServiceState(
-            items = sp.getString("items", null)?.let(::decode) ?: defaults(diesel),
+            // The items are set up in CarTracker and kept in LubeLogger; this is the last copy read from there
+            items = sp.getString("lubeItems", null)?.let(::decode) ?: emptyList(),
             carKm = sp.getString("carKm", null)?.toDoubleOrNull(),
             kmBefore = sp.getInt("kmBefore", 1_000),
             daysBefore = sp.getInt("daysBefore", 30),
@@ -157,8 +158,11 @@ class ServiceBook(context: Context, diesel: Boolean) {
     private var savedKm: Double? = _state.value.carKm
     private var lastMeters = 0.0
 
-    init {
-        if (!sp.contains("items")) saveItems()
+    /** The items as LubeLogger has them now, replacing what was there. */
+    fun replaceAll(items: List<ServiceItem>) {
+        if (items == _state.value.items) return
+        _state.update { it.copy(items = items) }
+        sp.edit().putString("lubeItems", encode(items)).apply()
     }
 
     /** Adds the item, or replaces the one with its id. */
@@ -259,7 +263,7 @@ class ServiceBook(context: Context, diesel: Boolean) {
     }
 
     private fun saveItems() {
-        sp.edit().putString("items", encode(_state.value.items)).apply()
+        sp.edit().putString("lubeItems", encode(_state.value.items)).apply()
     }
 
     /** Written when it has moved a little, not on every reading. */
