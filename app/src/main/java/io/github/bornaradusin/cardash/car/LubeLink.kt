@@ -102,7 +102,13 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
             .putString("vehicleName", setup.vehicleName)
             .putBoolean("sendOdometer", setup.sendOdometer)
             .apply()
+        val wasSending = _state.value.setup.let { it.connected && it.sendOdometer }
         _state.update { it.copy(setup = setup, problem = null) }
+        // Just turned on: send today's reading now rather than at the next drive
+        if (!wasSending && setup.connected && setup.sendOdometer) {
+            readingDue = true
+            canKm?.let { onCanOdometer(it) }
+        }
         scope.launch {
             runCatching { flush() }
             runCatching { syncService() }
@@ -127,10 +133,10 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
     /** The CAN box's odometer; null when it isn't giving one. Only the CAN box is exact enough to send. */
     fun onCanOdometer(km: Float?) {
         canKm = km
-        if (km == null || !readingDue) return
-        readingDue = false
         val setup = _state.value.setup
-        if (!setup.connected || !setup.sendOdometer) return
+        // The reading stays due until it can be sent: setting LubeLogger up mid-drive sends it then
+        if (km == null || !readingDue || !setup.connected || !setup.sendOdometer) return
+        readingDue = false
         val reading = km.roundToInt()
         val s = _state.value
         val today = LocalDate.now()
