@@ -1,8 +1,8 @@
 # Builds CarDash's road data (speed limits, traffic lights and speed cameras) for Ireland and
 # Northern Ireland from OpenStreetMap, with the Garda's GoSafe speed van zones and static cameras,
-# every Monday, and puts it on the "roads" branch. The app
-# downloads the squares around the car from there and keeps them, so it doesn't depend on the busy
-# public Overpass servers (it still uses them outside Ireland). Run it by hand from Actions → Roads.
+# every Monday, and puts it under the "roads" tag (a tag, not a branch: main stays the only branch).
+# The app downloads the squares around the car from there and keeps them, so it doesn't depend on the
+# busy public Overpass servers (it still uses them outside Ireland). Run it by hand from Actions → Roads.
 name: Roads
 
 on:
@@ -43,12 +43,12 @@ jobs:
           ls -la garda
       - name: Squares
         run: python3 tools/roads/build_tiles.py roads.osm.pbf out garda
-      - name: Publish to the roads branch
+      - name: Publish under the roads tag
         run: |
           cd out
-          git init -q -b roads
+          git init -q
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -q -m "Road data $(date -u +%F)"
-          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" roads
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:refs/tags/roads

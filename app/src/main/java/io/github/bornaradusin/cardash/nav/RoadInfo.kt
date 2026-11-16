@@ -71,7 +71,7 @@ enum class RoadSource { SAVED, CARDASH, OVERPASS }
  * (about 5 km a side in Ireland), fetched as the car gets near them and kept on the radio for a week.
  *
  * In Ireland and Northern Ireland they come from CarDash's own copy, built from OpenStreetMap every
- * Monday by GitHub (the Roads workflow, on the repository's "roads" branch): one small file per square,
+ * Monday by GitHub (the Roads workflow, under the repository's "roads" tag): one small file per square,
  * quick and always there. Anywhere else they come from the public Overpass servers, which are often
  * busy, so they're asked a few seconds apart and the first answer wins. A square that can't be fetched
  * uses the copy kept from before, however old.
