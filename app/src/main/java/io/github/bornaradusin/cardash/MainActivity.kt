@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -64,6 +65,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        keepFullScreen()
         media = Media(this)
         // A music app opened to start it: back to CarDash once it plays
         media.backToCarDash = {
@@ -368,6 +370,9 @@ class MainActivity : ComponentActivity() {
         media.preferred = musicApp()
         media.start()
         applyFullScreen(app.settings.fullScreen.value)
+        // The radio puts its bars back while another app (or the radio's own start-up) hands over
+        // to CarDash, after CarDash already hid them: hide them again once that has settled
+        listOf(400L, 1500L).forEach { barsHandler.postDelayed(reapply, it) }
         // The GPS, if location is allowed (asked for the first time the map or Where to? opens)
         app.nav.start()
     }
@@ -485,6 +490,30 @@ class MainActivity : ComponentActivity() {
         val installed = Apps.all(this)
         val chosen = app.settings.musicApp.value?.takeIf { pkg -> installed.any { it.pkg == pkg } }
         return chosen ?: Apps.defaultFor(2, installed)?.pkg
+    }
+
+    private val barsHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val reapply = Runnable { applyFullScreen(app.settings.fullScreen.value) }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) reapply.run()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        barsHandler.removeCallbacksAndMessages(null)
+    }
+
+    /** Full screen stays full screen: if the bars come back for good (not just swiped in for a moment), hide them again. */
+    private fun keepFullScreen() {
+        ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { v, insets ->
+            if (app.settings.fullScreen.value && insets.isVisible(WindowInsetsCompat.Type.systemBars())) {
+                barsHandler.removeCallbacks(reapply)
+                barsHandler.postDelayed(reapply, 300)
+            }
+            ViewCompat.onApplyWindowInsets(v, insets)
+        }
     }
 
     private fun applyFullScreen(on: Boolean) {
