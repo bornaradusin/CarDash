@@ -11,14 +11,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.net.ConnectException
+import java.net.Inet4Address
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.security.cert.CertificateExpiredException
+import java.security.cert.CertificateNotYetValidException
+import javax.net.ssl.SSLException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -60,7 +70,13 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        // IPv4 first: on a car's mobile data IPv6 often looks available but goes nowhere, and a
+        // browser quietly falls back to IPv4 where OkHttp would wait for the timeout
+        .dns { host -> Dns.SYSTEM.lookup(host).sortedBy { if (it is Inet4Address) 0 else 1 } }
+        .retryOnConnectionFailure(true)
         .build()
+    /** A second try over plain HTTP/1.1, for proxies in front of LubeLogger that trip over HTTP/2. */
+    private val plainClient = client.newBuilder().protocols(listOf(Protocol.HTTP_1_1)).build()
     private val sending = Mutex()
 
     private val _state = MutableStateFlow(
@@ -272,29 +288,56 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
                 .header("x-api-key", apiKey.trim())
                 .method(method, body)
                 .build()
-            try {
-                client.newCall(request).execute().use { response ->
-                    val text = response.body?.string().orEmpty()
-                    when {
-                        response.code == 401 || response.code == 403 ->
-                            throw LubeException(if (method == "GET") "LubeLogger didn't accept the key." else "The key can't add records: it needs the Editor role.")
-                        response.code == 404 -> throw LubeException("No LubeLogger found at that address.")
-                        !response.isSuccessful -> throw LubeException("LubeLogger answered with an error (${response.code}).")
-                    }
-                    if (method != "GET") {
-                        val answer = runCatching { JSONObject(text) }.getOrNull()
-                        if (answer != null && answer.has("success") && !answer.optBoolean("success", true)) {
-                            throw LubeException(answer.optString("message").ifBlank { "LubeLogger didn't save it." })
-                        }
-                    }
-                    text
+            fun send(c: OkHttpClient): String = c.newCall(request).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                when {
+                    response.code == 401 || response.code == 403 ->
+                        throw LubeException(if (method == "GET") "LubeLogger didn't accept the key." else "The key can't add records: it needs the Editor role.")
+                    response.code == 404 -> throw LubeException("No LubeLogger found at that address.")
+                    !response.isSuccessful -> throw LubeException("LubeLogger answered with an error (${response.code}).")
                 }
+                if (method != "GET") {
+                    val answer = runCatching { JSONObject(text) }.getOrNull()
+                    if (answer != null && answer.has("success") && !answer.optBoolean("success", true)) {
+                        throw LubeException(answer.optString("message").ifBlank { "LubeLogger didn't save it." })
+                    }
+                }
+                text
+            }
+            try {
+                send(client)
             } catch (e: LubeException) {
                 throw e
-            } catch (e: IOException) {
-                throw LubeException("Couldn't reach LubeLogger: the radio may be offline.")
+            } catch (first: IOException) {
+                try {
+                    send(plainClient)
+                } catch (e: LubeException) {
+                    throw e
+                } catch (e: IOException) {
+                    throw LubeException(reason(first, url.host))
+                }
             }
         }
+
+    /** What actually went wrong, in words, so it can be fixed (the radio's clock, no internet …). */
+    private fun reason(e: IOException, host: String): String {
+        val chain = generateSequence<Throwable>(e) { it.cause }.take(8).toList()
+        val now = Instant.now().atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        return when {
+            chain.any { it is CertificateNotYetValidException || it is CertificateExpiredException } ||
+                (chain.any { it is SSLException } && now.year < 2025) ->
+                "The radio's date is wrong (it says $now), so the secure connection to $host fails. Set the radio's date and time, then try again."
+            chain.any { it is UnknownHostException } ->
+                "The radio can't look up $host: no internet, or its DNS isn't working."
+            chain.any { it is SocketTimeoutException } ->
+                "$host didn't answer in time. The radio's internet may be slow or blocked for CarDash."
+            chain.any { it is ConnectException || it is NoRouteToHostException } ->
+                "The radio couldn't connect to $host (${e.message ?: "refused"})."
+            chain.any { it is SSLException || it is java.security.cert.CertificateException } ->
+                "The secure connection to $host failed: ${(chain.lastOrNull { it.message != null } ?: e).message}"
+            else -> "Couldn't reach LubeLogger at $host: ${e.javaClass.simpleName}${e.message?.let { " ($it)" } ?: ""}"
+        }
+    }
 
     private fun baseUrl(server: String): HttpUrl? {
         val trimmed = server.trim().trimEnd('/')
