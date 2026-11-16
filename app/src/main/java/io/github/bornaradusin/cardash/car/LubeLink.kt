@@ -72,7 +72,9 @@ class LubeLink(context: Context, private val scope: CoroutineScope, private val 
         .readTimeout(30, TimeUnit.SECONDS)
         // IPv4 first: on a car's mobile data IPv6 often looks available but goes nowhere, and a
         // browser quietly falls back to IPv4 where OkHttp would wait for the timeout
-        .dns { host -> Dns.SYSTEM.lookup(host).sortedBy { if (it is Inet4Address) 0 else 1 } }
+        .dns(object : Dns {
+            override fun lookup(hostname: String) = Dns.SYSTEM.lookup(hostname).sortedBy { if (it is Inet4Address) 0 else 1 }
+        })
         .retryOnConnectionFailure(true)
         .build()
     /** A second try over plain HTTP/1.1, for proxies in front of LubeLogger that trip over HTTP/2. */
