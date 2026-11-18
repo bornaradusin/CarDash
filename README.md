@@ -1,5 +1,7 @@
 # CarDash
 
+![Home, flat out from standstill to top speed through all six gears (Shift up and the speed warning turned off for this one)](https://raw.githubusercontent.com/bornaradusin/CarDash/main/wiki/images/home.gif)
+
 A dashboard and home screen for Android car radios (built for a 1280×720 UIS7862 unit in an Audi TT), with live engine data from a USB ELM327 OBD dongle.
 
 - **Home**: RPM and speed dials, oil, boost, intake air and battery, and a middle box that swipes between this drive's figures, directions and a 3D map; four app buttons and the music that's playing. Open doors, bonnet or boot show on a picture of the car, and a warning fills the screen over the speed you set.
